@@ -1,0 +1,27 @@
+{
+  "name": "voting-alpha",
+  "version": "0.1.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/voteflux/voting-alpha.git"
+  },
+  "author": "Max Kaye (max.kaye@voteflux.org)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/voteflux/voting-alpha/issues"
+  },
+  "homepage": "https://github.com/voteflux/voting-alpha#readme",
+  "dependencies": {
+    "solc": "^0.5.2",
+    "truffle": "^5.0.0",
+    "typescript": "^3.2.2"
+  }
+}
