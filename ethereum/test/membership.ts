@@ -1,3 +1,17 @@
+declare namespace artifacts {
+    function require(s: string): any;
+}
+
+declare function contract(s: string, f: (addrs: string[]) => Promise<any>): void;
+
+declare namespace assert {
+    function equal<T>(a: T, b: T, s?: string): void;
+}
+
+
+
+
+
 const Membership = artifacts.require("Membership")
 
 contract("Add member", async ([a1, a2, a3]) => {
