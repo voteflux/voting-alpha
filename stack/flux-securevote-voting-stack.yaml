@@ -1,0 +1,413 @@
+---
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: >
+  This is a one-click secure(ish) voting stack. This template will deploy
+  an Ethereum POA network on Amazon EC2 instances pre-loaded with voting smart
+  contracts, along with websites and resources needed for voters to participate.
+  You're able to integrate this with any membership database provided you're
+  able to call an HTTPS endpoint.
+
+  It also includes the Ethereum Network Stats and Ethereum Explorer services.
+
+  Based on a heavily modified version of Amazon's blockchain templates.
+  License: Apache 2.0 (Please do not remove) Apr 4, 2018 (bt-f5kb4kx9v)
+
+
+# TODO: EC2 keypair, security group, instance profile?, vpc, subnets, domains
+
+
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Network parameters
+        Parameters:
+          - NamePrefix
+          - BlockGasLimit
+          - NumberOfEthereumConsensusNodes
+          - NumberOfEthereumPublicNodes
+
+      - Label:
+          default: Platform/EC2 configuration
+        Parameters:
+          - EC2InstanceType
+          - SSHKey
+          - SSHEncryptionPassword
+      
+      - Label:
+          default: Domain Name configuration
+        Parameters:
+          - HostedZone
+          - Subdomain
+
+      - Label:
+          default: Administration details
+        Parameters:
+          - AdminEmail
+
+    ParameterLabels:
+      NamePrefix:
+        default: A DNS compatible name prefix to use in the names of resources (e.g. fluxvote-testnet)
+      NumberOfEthereumConsensusNodes:
+        default: Number of Ethereum Consensus nodes (not remotely accessable)
+      NumberOfEthereumPublicNodes:
+        default: Number of Ethereum public nodes (for accessing blockchain data)
+      BlockGasLimit:
+        default: Approximate voting capacity is (BlockGasLimit / 100000) per 5 seconds, so 8 million allows for around 16 votes per second.
+      SSHKey:
+        default: An SSH Public key to configure the EC2 nodes with. (Leave blank to generate a new one and email to the administrator)
+      SSHEncryptionPassword:
+        default: Only required if an SSHKey is not provided. The password with which to encrypt the SSH key before delivery via email.
+      EC2InstanceType:
+        default: EC2 Instance Type
+      HostedZone:
+        default: The hosted zone to use for domains
+      Subdomain:
+        default: The subdomain to use under the hosted zone (e.g. app for all domains under *.app.my.tld if my.tld was associated with the hosted zone)
+      AdminEmail:
+        default: The email address of the administrator. Various configuration items will be emailed following the stack deployment. Additionally alerts from the production system will also be forwarded here.
+
+Parameters:
+  NamePrefix:
+    Description: A DNS compatible name prefix to use in the names of resources (e.g. fluxvote-testnet)
+    Type: String
+  AdminEmail:
+    Description: The email address for the administrator. Alerts and configuration items will be sent here, including SSH keys.
+    Type: String
+  
+  HostedZone:
+    Description: The hosted zone to use for domains
+    Type: AWS::Route53::HostedZone::Id
+  Subdomain:
+    Description: The subdomain to use under the hosted zone (e.g. 'vote' will mean all domains are created under *.vote.my.tld if my.tld corresponds to the above the hosted zone)
+    Default: "voting-app"
+    Type: String
+
+  NumberOfEthereumConsensusNodes:
+    Type: Number
+    Default: '2'
+    MinValue: 1
+    MaxValue: 20
+    Description: There must be at least one Ethereum consensus node.
+    ConstraintDescription: You must have at least one Ethereum consensus node.
+  NumberOfEthereumPublicNodes:
+    Type: Number
+    Default: '2'
+    MinValue: 1
+    MaxValue: 20
+    Description: There must be at least one Ethereum public node.
+    ConstraintDescription: You must have at least one Ethereum consensus.
+  BlockGasLimit:
+    Type: Number
+    Default: '8000000'
+    Description: The limit on the total amount of gas that can be spent for transactions in a block. This is the target block gas limit for the miner, not the starting block gas limit set in the genesis block.
+    MinValue: 1000000
+    MaxValue: 1000000000
+    ConstraintDescription: Block Gas Limit must be between 1 million and 1 billion.
+  SSHKey:
+    Type: 'String'  # AWS::EC2::KeyPair::KeyName
+    Description: An SSH public key to configure the EC2 nodes to accept for login. If one is not provided a fresh key will be created and emailed to the administrator.
+  EC2InstanceType:
+    Type: String
+    Default: t3.micro
+    AllowedValues:
+      - t2.micro
+      - t3.micro
+      - t2.small
+      - t2.medium
+      - t2.large
+      - t2.xlarge
+      - t2.2xlarge
+      - m3.medium
+      - m3.large
+      - m3.xlarge
+      - m3.2xlarge
+      - m4.large
+      - m4.xlarge
+      - m4.2xlarge
+      - m4.4xlarge
+      - m4.10xlarge
+      - r3.large
+      - r3.xlarge
+      - r3.2xlarge
+      - r3.4xlarge
+      - r3.8xlarge
+      - r4.large
+      - r4.xlarge
+      - r4.2xlarge
+      - r4.4xlarge
+      - r4.8xlarge
+      - r4.16xlarge
+      - c4.large
+      - c4.xlarge
+      - c4.2xlarge
+      - c4.4xlarge
+      - c4.8xlarge
+      - c5.large
+      - c5.xlarge
+      - c5.2xlarge
+      - c5.4xlarge
+      - c5.9xlarge
+      - c5.18xlarge
+    ConstraintDescription: Please choose a valid instance type.
+
+Mappings:
+  RegionToResourceRegion:
+    us-east-1:
+      to: us-east-1
+    us-east-2:
+      to: us-east-2
+    us-west-2:
+      to: us-west-2
+    us-west-1:
+      to: us-west-2
+    ca-central-1:
+      to: us-east-1
+    eu-central-1:
+      to: us-east-1
+    eu-west-1:
+      to: us-east-1
+    eu-west-2:
+      to: us-east-1
+    eu-west-3:
+      to: us-east-1
+    ap-northeast-2:
+      to: us-east-1
+    ap-northeast-1:
+      to: us-east-1
+    ap-southeast-2:
+      to: us-east-1
+    ap-southeast-1:
+      to: us-east-1
+    sa-east-1:
+      to: us-east-1
+    ap-south-1:
+      to: us-east-1
+
+  RegionInformationMap:
+    us-east-1:
+      ResourceAccountId: 354658284331
+    us-east-2:
+      ResourceAccountId: 763976151875
+    us-west-2:
+      ResourceAccountId: 712425161857
+
+Resources:
+
+  rStaticBucket:
+    Type: AWS::S3::Bucket
+    Properties: 
+      AccessControl: PublicRead
+      BucketName: !Sub ${NamePrefix}-static-resources
+      CorsConfiguration:
+        CorsRules:
+          - AllowedMethods: [ 'GET' ]
+            AllowedOrigins: [ '*' ]
+            MaxAge: 86400
+
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.13.37.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  rKms:
+    Type: AWS::KMS::Key
+
+  rKmsAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: !Sub ${NamePrefix}-general-kms-key
+      TargetKeyId: !Ref rKms
+
+  rPublicSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${NamePrefix}-nodes-public-sg
+      GroupDescription: SG for publicly accessible EC2 nodes (Eth + IPFS)
+      VpcId: !Ref rVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8545
+          ToPort: 8546
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 30303
+          ToPort: 30303
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 5001
+          ToPort: 5001
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 4001
+          ToPort: 4001
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: "-1"
+          CidrIp: 0.0.0.0/0
+
+  rParamsCr:
+    Type: Custom::Params
+    Properties:
+      ServiceToken: !GetAtt rParamsLambda.Arn
+
+  rParamsLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'index.handler'
+      FunctionName: !Sub ${NamePrefix}-crypto-params-cr
+      Timeout: 30
+      KmsKeyArn: !Ref rKmsAlias
+      Policies:
+        - Statement:
+            Effect: Allow
+            Action: ssm:PutParameter
+            Resource:
+              - !Sub "${NamePrefix}-param-*"
+
+
+  # EthereumCommonStack:
+  #   Type: AWS::CloudFormation::Stack
+  #   Properties:
+  #     TemplateURL: !Sub "${NestedTemplateOrigin}ethereum-common.template.yaml"
+  #     Parameters:
+  #       VPCID:
+  #         Ref: VPCID
+  #       NetworkSubnetIDs:
+  #         Fn::Join:
+  #           - ","
+  #           - Ref: NetworkSubnetIDs
+  #       ALBSubnetIDs:
+  #         Fn::Join:
+  #           - ","
+  #           - Ref: ALBSubnetIDs
+  #       NumberOfEthereumClients:
+  #         Ref: NumberOfEthereumClients
+  #       NumberOfEthereumMiners:
+  #         Ref: NumberOfEthereumMiners
+  #       InitialAccountAddresses:
+  #         Ref: InitialAccountAddresses
+  #       NetworkID:
+  #         Ref: NetworkID
+  #       BlockGasLimit:
+  #         Ref: BlockGasLimit
+  #       InitialBlockGasLimit:
+  #         Ref: InitialBlockGasLimit
+  #       EC2InstanceProfileArn:
+  #         Ref: EC2InstanceProfileArn
+  #       EC2KeyPairName:
+  #         Ref: EC2KeyPairName
+  #       EC2SecurityGroup:
+  #         Ref: EC2SecurityGroup
+  #       ECSRoleForALB:
+  #         Ref: ECSRoleForALB
+  #       NumberOfEC2Instances:
+  #         Ref: NumberOfEC2Instances
+  #       EC2InstanceType:
+  #         Ref: EC2InstanceType
+  #       RootStackName:
+  #         Ref: AWS::StackName
+  #       MinerAccountAddress:
+  #         Ref: MinerAccountAddress
+  #       EthereumNodeLogLevel:
+  #         Ref: EthereumNodeLogLevel
+  #       RunEthExplorer:
+  #         Ref: RunEthExplorer
+  #       RunEthStats:
+  #         Ref: RunEthStats
+  #       EthStatsSecret:
+  #         Ref: EthStatsSecret
+  #       ContainerPlatform:
+  #         Ref: ContainerPlatform
+  #       InitialDifficulty:
+  #         Ref: InitialDifficulty
+  #       InitialAccountBalance:
+  #         Ref: InitialAccountBalance
+  #       GasPriceFloor:
+  #         Ref: GasPriceFloor
+  #       LoadBalancerSecurityGroup:
+  #         Ref: LoadBalancerSecurityGroup
+  #       ClusterName:
+  #         Fn::Sub: "${AWS::StackName}-Ethereum"
+  #       DockerRegion:
+  #         Fn::FindInMap:
+  #           - RegionToResourceRegion
+  #           - Ref: AWS::Region
+  #           - to
+  #       DockerECRAccount:
+  #         Fn::FindInMap:
+  #           - RegionInformationMap
+  #           - Fn::FindInMap:
+  #             - RegionToResourceRegion
+  #             - Ref: AWS::Region
+  #             - to
+  #           - ResourceAccountId
+  #       EthereumDockerImage:
+  #         Fn::Sub:
+  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/client-go:v1"
+  #           - DockerRegion:
+  #               Fn::FindInMap:
+  #                 - RegionToResourceRegion
+  #                 - Ref: AWS::Region
+  #                 - to
+  #             DockerECRAccount:
+  #               Fn::FindInMap:
+  #                 - RegionInformationMap
+  #                 - Fn::FindInMap:
+  #                   - RegionToResourceRegion
+  #                   - Ref: AWS::Region
+  #                   - to
+  #                 - ResourceAccountId
+  #       EthStatsDockerImage:
+  #         Fn::Sub:
+  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/eth-netstats:v1"
+  #           - DockerRegion:
+  #               Fn::FindInMap:
+  #                 - RegionToResourceRegion
+  #                 - Ref: AWS::Region
+  #                 - to
+  #             DockerECRAccount:
+  #               Fn::FindInMap:
+  #                 - RegionInformationMap
+  #                 - Fn::FindInMap:
+  #                   - RegionToResourceRegion
+  #                   - Ref: AWS::Region
+  #                   - to
+  #                 - ResourceAccountId
+  #       EthExplorerDockerImage:
+  #         Fn::Sub:
+  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/eth-explorer:v1"
+  #           - DockerRegion:
+  #               Fn::FindInMap:
+  #                 - RegionToResourceRegion
+  #                 - Ref: AWS::Region
+  #                 - to
+  #             DockerECRAccount:
+  #               Fn::FindInMap:
+  #                 - RegionInformationMap
+  #                 - Fn::FindInMap:
+  #                   - RegionToResourceRegion
+  #                   - Ref: AWS::Region
+  #                   - to
+  #                 - ResourceAccountId
+  #       NestedTemplateOrigin: !Ref NestedTemplateOrigin
+
+# Outputs:
+#   EthStatsURL:
+#     Description: "Visit this URL to see the status of your Ethereum nodes"
+#     Value:
+#       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthStatsURL"]
+#   EthExplorerURL:
+#     Description: "Visit this URL to view transactions on your Ethereum network"
+#     Value:
+#       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthExplorerURL"]
+#   EthJsonRPCURL:
+#     Description: "Use this URL to access the Geth JSON RPC of your Ethereum Clients, or input it into Metamask"
+#     Value:
+#       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthJsonRPCURL"]
