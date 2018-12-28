@@ -81,7 +81,11 @@ Parameters:
     Description: A password to encrypt the generated SSH key with (which is emailed to Admin). Only required if an SSHKey is not provided.
     Type: String
     Default: ''
-  
+  Nonce:
+    Description: A random string used to ensure subsequent deploys can recreate custom resources appropriately. This is safe to ignore on first deploy.
+    Type: String
+    Default: ''
+
   HostedZone:
     Description: The hosted zone to use for domains
     Type: AWS::Route53::HostedZone::Id
@@ -157,6 +161,9 @@ Parameters:
       - c5.9xlarge
       - c5.18xlarge
     ConstraintDescription: Please choose a valid instance type.
+  pAmiId:
+    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
 
 
 Conditions:
@@ -224,13 +231,6 @@ Resources:
             AllowedOrigins: [ '*' ]
             MaxAge: 86400
 
-  rVpc:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.13.37.0/24
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-
   rKms:
     Type: AWS::KMS::Key
     Properties:
@@ -282,6 +282,10 @@ Resources:
           FromPort: 4001
           ToPort: 4001
           CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
       SecurityGroupEgress:
         - IpProtocol: "-1"
           CidrIp: 0.0.0.0/0
@@ -298,6 +302,7 @@ Resources:
       NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
       NPublicNodes: !Ref NumberOfEthereumPublicNodes
       SSHEncryptionPassword: !Ref SSHEncryptionPassword
+      Nonce: !Ref Nonce
 
 
   rParamsLambda:
@@ -315,8 +320,8 @@ Resources:
             Effect: Allow
             Action: ssm:PutParameter
             Resource:
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${NamePrefix}-param-*"
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${NamePrefix}-nodekey-consensus-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-consensus-*"
           -
             Effect: Allow
             Action:
@@ -324,17 +329,111 @@ Resources:
               - ec2:DeleteKeyPair
               - ec2:ImportKeyPair
             Resource:
-              - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key*
-              - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key
+              - '*'
+              # It's unfortunate but we can't do resource level stuff with ec2:*KeyPair actions: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/ec2-api-permissions.html#ec2-api-unsupported-resource-permissions
+              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key*
+              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key
           -
             Effect: Allow
             Action:
               - ec2:DescribeKeyPairs
+              - ssm:DescribeParameters
             Resource: '*'
           -
             Effect: Allow
             Action: s3:*
-            Resource: !GetAtt rStaticBucket.Arn
+            Resource:
+              - !GetAtt rStaticBucket.Arn
+              - !Sub ${rStaticBucket.Arn}/*
+
+  rVpc:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 10.13.37.0/24
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+
+  rSubnet1:  # todo: more than 1 subnet / availability zone
+    Type: AWS::EC2::Subnet
+    Properties:
+      AvailabilityZone: !Sub ${AWS::Region}a
+      CidrBlock: 10.13.37.0/24
+      MapPublicIpOnLaunch: true
+      VpcId: !Ref rVpc
+
+#  # todo, use include or something to template this out
+#  rEc2Node0:
+#    Type: AWS::EC2::Instance
+#    Properties:
+#      ImageId: !Ref pAmiId
+#      KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
+#      InstanceType: !Ref EC2InstanceType
+#      SecurityGroups: [!Ref rPublicSG]
+#      BlockDeviceMappings:
+#        - DeviceName: /dev/sda1
+#          Ebs:
+#            VolumeSize: 50
+#      AvailabilityZone: !Sub ${AWS::Region}a
+#      EbsOptimized: true
+#      InstanceInitiatedShutdownBehavior: stop
+#      SubnetId: !Ref rVpc
+
+
+  rNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: [!Ref rSubnet1]
+      LaunchConfigurationName:
+        Ref: rNodeLaunchConfig
+      MinSize: '1'
+      MaxSize:
+        Ref: NumberOfEthereumPublicNodes
+      DesiredCapacity:
+        Ref: NumberOfEthereumPublicNodes
+#      Tags:
+#        - Key: Name
+#          Value: !Ref InstanceNames
+#          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT10M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
+
+  rNodeLaunchConfig:
+    Type: AWS::AutoScaling::LaunchConfiguration
+    Properties:
+      ImageId: !Ref pAmiId
+      SecurityGroups:
+        - Ref: rPublicSG
+      InstanceType:
+        Ref: EC2InstanceType
+      KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
+#      IamInstanceProfile:
+#        Ref:
+      UserData:
+        Fn::Base64:
+          Fn::Join:
+          - ''
+          - - "#!/bin/bash -x"
+            - "\n"
+            - "yum install -y aws-cfn-bootstrap"
+            - "\n"
+#            - Ref: LaunchScriptText
+            - "\n"
+            - "res=$?"
+            - "\n"
+            - "echo $res"
+            - "\n"
+            - "/opt/aws/bin/cfn-signal -e $res "
+            - "         --stack "
+            - Ref: AWS::StackName
+            - "         --resource ServiceAutoScalingGroup "
+            - "         --region "
+            - Ref: AWS::Region
+            - "\n"
+
 
 
   # EthereumCommonStack:
@@ -463,7 +562,15 @@ Resources:
   #                 - ResourceAccountId
   #       NestedTemplateOrigin: !Ref NestedTemplateOrigin
 
-# Outputs:
+Outputs:
+  oChainSpecUrl:
+    Value: !GetAtt rParamsCr.ChainSpecUrl
+  oChainSpec:
+    Value: !GetAtt rParamsCr.ChainSpec
+  oEthNetworkId:
+    Value: !GetAtt rParamsCr.NetworkId
+  oEc2KeyPairName:
+    Value: !GetAtt rParamsCr.KeyPairName
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

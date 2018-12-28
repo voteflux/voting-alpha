@@ -22,6 +22,8 @@ TEST_STACK_NAME = "test-voting-stack"
 TEST_SUBDOMAIN = "testnet"
 TEST_NAMEPREFIX = "testnet"
 
+MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
+
 
 def set_offset(offset):
     global TEST_STACK_NAME, TEST_NAMEPREFIX, TEST_SUBDOMAIN
@@ -29,8 +31,6 @@ def set_offset(offset):
     TEST_SUBDOMAIN += '-{}'.format(offset)
     TEST_NAMEPREFIX += '-{}'.format(offset)
 
-
-MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
 
 cfn = boto3.client('cloudformation')
 
@@ -133,9 +133,20 @@ def update_stack(stack_name, obj_url, params_aws):
 
 
 def get_failed_msgs(stack_name):
+    evts_after = get_stack(stack_name)['LastUpdatedTime']
     evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
-    evts_notable = list(filter(lambda evt: 'FAILED' in evt['ResourceStatus'], evts))
-    return list([(evt['LogicalResourceId'], evt['ResourceStatusReason']) for evt in evts_notable])
+    evts_notable = list(
+        filter(lambda evt:
+               ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and evt[
+                   'Timestamp'] > evts_after, evts))
+    evts_w_dupes = list([(evt['LogicalResourceId'], evt.get('ResourceStatusReason', evt)) for evt in evts_notable])
+    resources_done = set()
+    evts_final = []
+    for (r_id, reason) in evts_w_dupes:
+        if r_id not in resources_done:
+            evts_final.append((r_id, reason))
+            resources_done.add(r_id)
+    return evts_final
 
 
 def stream_cfn_events(stack_name, heading_prefix=None):
@@ -181,7 +192,6 @@ def stream_cfn_events(stack_name, heading_prefix=None):
             curses.endwin()
 
     curses.wrapper(_run)
-
 
 
 @click.group()
@@ -235,7 +245,8 @@ def cmd_stream_cfn(stack_name):
 @click.option("--open-browser/--no-open-browser", default=False)
 @click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True)
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
-@click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING, help="the ssh key with which to configure EC2 nodes.")
+@click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING,
+              help="the ssh key with which to configure EC2 nodes.")
 @click.pass_context
 def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name):
     if stack_name == '':
@@ -246,7 +257,10 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
 
     TMP_TMPL_FILE = 'tmp-stack.yaml'
     obj_key = "templates/" + STACK_TMPL.split('/')[-1]
-    must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}".format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
+    must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}".format(STACK_TMPL,
+                                                                                                             S3_DEV_BUCKET,
+                                                                                                             TMP_TMPL_FILE),
+             silent=True)
     s3 = boto3.client('s3')
     s3_tfer = S3Transfer(s3)
     s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
@@ -263,8 +277,19 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         'Subdomain': TEST_SUBDOMAIN,
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
+        'Nonce': str(int(time.time()))
     }
     params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
+
+    cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(
+        obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))
+
+    def gen_cfn_evt_url(sid):
+        return "https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/{}/events".format(
+            urllib.parse.quote(sid, safe=''))
+
+    def gen_open_url_cmd(url):
+        return "cmd.exe /c start {}".format(url)
 
     if deploy:
         await_in_prog(stack_name)
@@ -273,29 +298,26 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
             sid = update_stack(stack_name, obj_url, params_aws)
         else:
             sid = create_stack(stack_name, obj_url, params_aws)
-        # s = get_stack(stack_name)
-        cfn_url = "https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/{}/events".format(urllib.parse.quote(sid, safe=''))
-        open_cmd = "explorer.exe \"{}\"".format(cfn_url)
+        cfn_evt_url = gen_cfn_evt_url(sid)
         if open_browser:
-            os.system(open_cmd)
+            os.system(gen_open_url_cmd(cfn_evt_url))
         if watch:
             stream_cfn_events(stack_name, heading_prefix="DEPLOY")
             if stack_failed(stack_name):
-                msgs = ["{}: {}".format(a,b) for (a,b) in get_failed_msgs(stack_name)]
+                msgs = ["{}: {}".format(a, b) for (a, b) in get_failed_msgs(stack_name)]
                 print_output("Deploy failed. Msgs: \n\n{}".format('\n'.join(msgs)))
             else:
-                print_output("Deploy Success! {}".format(cfn_url))
+                print_output("Deploy Success! {}".format(cfn_evt_url))
         else:
-            print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_url))
+            print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
 
     else:
-        cfn_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))
-        open_cfn_url_cmd = "explorer.exe \"{}\"".format(cfn_url)
         if open_browser:
-            print("Opening CFN template via console. CMD: {}".format(open_cfn_url_cmd))
-            os.system(open_cfn_url_cmd)
+            _to_run = gen_open_url_cmd(cfn_console_create_url)
+            print("Opening CFN template via console. CMD: {}".format(_to_run))
+            os.system(_to_run)
         print_output("""Uploaded {}
-        Launch via CloudFormation: {}""".format(obj_url, cfn_url))
+        Launch via CloudFormation: {}""".format(obj_url, cfn_console_create_url))
 
 
 # monkey patch so usage output looks nicer

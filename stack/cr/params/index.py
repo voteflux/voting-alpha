@@ -20,7 +20,7 @@ def do_create(props: dict):
     data.update(generate_ec2_key(**props))
 
     keys = generate_node_keys(**props)
-    data.update(save_node_keys(keys))
+    data.update(save_node_keys(keys, **props))
 
     data.update(gen_eth_stats_secret(**props))
     data.update(gen_network_id(**props))
@@ -39,15 +39,12 @@ def handler(event: dict, context):
         LOGGER.info('REQUEST RECEIVED:\n %s', context)
         if event['RequestType'] == 'Create':
             LOGGER.info('CREATE!')
-
-            LOGGER.info("Event Keys: %s", event.keys())
-            props = event['ResourceProperties']
-            data = do_create(props)
+            data = do_create(event['ResourceProperties'])
             send_response(event, context, "SUCCESS", data)
         elif event['RequestType'] == 'Update':
-            LOGGER.info('UPDATE! (Do Nothing ATM)')
-            send_response(event, context, "SUCCESS",
-                          {"Message": "Resource update (null) successful!"})
+            LOGGER.info('UPDATE! (Rerun create...)')
+            data = do_create(event['ResourceProperties'])
+            send_response(event, context, "SUCCESS", data)
         elif event['RequestType'] == 'Delete':
             LOGGER.info('DELETE!')
             send_response(event, context, "SUCCESS",
@@ -61,26 +58,29 @@ def handler(event: dict, context):
         tb_str = traceback.format_exc()
         LOGGER.info('FAILED!')
         LOGGER.info("Exception: %s", repr(e))
-        send_response(event, context, "FAILED", {"Message": "Exception: %s\n\nTraceback:\n%s" % (repr(e), tb_str)})
+        send_response(event, context, "FAILED", {"Message": "Error: %s" % (repr(e),), "Traceback": tb_str})
 
 
 def send_response(event, context, response_status, response_data):
     '''Send a resource manipulation status response to CloudFormation'''
-    reason_prefix = '' if 'Message' not in response_data else response_data['Message'] + ' \n'
+    reason_prefix = response_data.get('Message', '')
     logs_url = "https://{region}.console.aws.amazon.com/cloudwatch/home?region={region}#logEventViewer:group={log_group};stream={log_stream}".format(
         region=context.invoked_function_arn.split(":")[3],
         log_group=context.log_group_name,
         log_stream=context.log_stream_name
     )
-    response_body = json.dumps({
+    resp_dict = {
         "Status": response_status,
-        "Reason": reason_prefix + "Logs URL: {} \nSee the details in CloudWatch Log Stream: {}".format(logs_url, context.log_stream_name),
+        "Reason": reason_prefix + "\nLogs URL: {}".format(logs_url),
         "PhysicalResourceId": context.log_stream_name,
         "StackId": event['StackId'],
         "RequestId": event['RequestId'],
         "LogicalResourceId": event['LogicalResourceId'],
         "Data": response_data
-    }).encode()
+    }
+    if 'Traceback' in response_data:
+        resp_dict['Reason'] += "\n\nTraceback:\n" + response_data['Traceback']
+    response_body = json.dumps(resp_dict).encode()
 
     LOGGER.info('ResponseURL: %s', event['ResponseURL'])
     LOGGER.info('ResponseBody: %s', response_body.decode())
