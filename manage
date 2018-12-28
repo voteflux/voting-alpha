@@ -18,6 +18,23 @@ import click
 S3_DEV_BUCKET = "flux-scratch"
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
+TEST_STACK_NAME = "test-voting-stack"
+TEST_SUBDOMAIN = "testnet"
+TEST_NAMEPREFIX = "testnet"
+
+
+def set_offset(offset):
+    global TEST_STACK_NAME, TEST_NAMEPREFIX, TEST_SUBDOMAIN
+    TEST_STACK_NAME += '-{}'.format(offset)
+    TEST_SUBDOMAIN += '-{}'.format(offset)
+    TEST_NAMEPREFIX += '-{}'.format(offset)
+
+
+MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
+
+cfn = boto3.client('cloudformation')
+
+
 def must_run(cmd, silent=False):
     logging.info("Running `%s`" % cmd)
     out = subprocess.STDOUT
@@ -51,22 +68,182 @@ def print_output(msg):
     print("\n### RESULT ###\n\n{}".format(msg))
 
 
+def get_stack(stack_name):
+    ss = list(filter(lambda s: s['StackName'] == stack_name, cfn.list_stacks()['StackSummaries']))
+    if len(ss) > 0:
+        return ss[0]
+    return None
+
+
+def is_in_prog(stack_name):
+    s = get_stack(stack_name)
+    return s and 'IN_PROGRESS' in s['StackStatus']
+
+
+def stack_exists(stack_name):
+    s = get_stack(stack_name)
+    return s and s['StackStatus'] != 'DELETE_COMPLETE'
+
+
+def stack_failed(stack_name):
+    s = get_stack(stack_name)
+    return s and ('FAILED' in s['StackStatus'] or 'ROLLBACK' in s['StackStatus'])
+
+
+def await_in_prog(stack_name):
+    if is_in_prog(stack_name):
+        logging.info("Waiting for CFN deploy to complete before we trigger another.")
+        stream_cfn_events(stack_name, heading_prefix="AWAITING")
+        logging.info("Previous deploy completed, performing deploy...")
+
+
+def delete_stack(stack_name):
+    r = cfn.delete_stack(StackName=stack_name)
+    while stack_exists(stack_name):
+        time.sleep(0.1)
+    return r
+
+
+def stack_del_if_necessary(stack_name):
+    if stack_exists(stack_name) and get_stack(stack_name)['StackStatus'] == 'ROLLBACK_COMPLETE':
+        logging.warning("Deleting {} as it's in ROLLBACK_COMPLETE".format(stack_name))
+        delete_stack(stack_name)
+
+
+def create_stack(stack_name, obj_url, params_aws):
+    r = cfn.create_stack(
+        StackName=stack_name,
+        TemplateURL=obj_url,
+        Parameters=params_aws,
+        Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
+        OnFailure="DELETE",
+        TimeoutInMinutes=3
+    )
+    return r['StackId']
+
+
+def update_stack(stack_name, obj_url, params_aws):
+    r = cfn.update_stack(
+        StackName=stack_name,
+        TemplateURL=obj_url,
+        Parameters=params_aws,
+        Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
+    )
+    return r['StackId']
+
+
+def get_failed_msgs(stack_name):
+    evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+    evts_notable = list(filter(lambda evt: 'FAILED' in evt['ResourceStatus'], evts))
+    return list([(evt['LogicalResourceId'], evt['ResourceStatusReason']) for evt in evts_notable])
+
+
+def stream_cfn_events(stack_name, heading_prefix=None):
+    import curses
+
+    def _run(stdscr):
+        stdscr.border()
+        stdscr_height, stdscr_width = stdscr.getmaxyx()
+        text_win = curses.newwin(stdscr_height - 1, stdscr_width, 1, 0)
+
+        heading = 'CFN Status ({})'.format(stack_name)
+        if heading_prefix:
+            heading = '[{}] {}'.format(heading_prefix, heading)
+
+        curses.noecho()
+        text_win.addstr(0, 0, heading)
+        text_win.refresh()
+
+        try:
+            while is_in_prog(stack_name):
+                evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+                resources = {}
+                _resources_order = []
+                for evt in evts[::-1]:  # start from last event
+                    resources[evt['LogicalResourceId']] = {'status': evt['ResourceStatus'], 'ts': evt['Timestamp']}
+                    _resources_order.insert(0, evt['LogicalResourceId'])
+
+                text_win.clear()
+                text_win.addstr(0, 0, heading)
+                l_num = 1
+                for r in _resources_order:
+                    if r in resources:
+                        _r = resources[r]
+                        text_win.addstr(l_num, 0, '{} - {} - {}'.format(r, _r['status'], _r['ts']))
+                        l_num += 1
+                        del resources[r]
+                text_win.refresh()
+                time.sleep(0.25)
+        finally:
+            curses.nocbreak()
+            stdscr.keypad(False)
+            curses.echo()
+            curses.endwin()
+
+    curses.wrapper(_run)
+
+
+
 @click.group()
 @click.option("--debug/--no-debug", default=False)
-def cli(debug):
+@click.option("--offset", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
+def cli(debug, offset):
     if debug:
         logging.basicConfig(level=logging.DEBUG)
         logging.debug("Debug mode enabled")
+    offset = offset if len(offset) > 0 else None
+    if offset:
+        set_offset(offset)
+
+
+@cli.command(name='pip-install')
+@click.argument('target', nargs=1)
+@click.argument('pkgs', nargs=-1)
+def pip_install(target, pkgs):
+    _pkgs = ' '.join(pkgs)
+    if os.path.exists(target):
+        os.chdir(target)
+        with open('requirements.txt', 'r') as f:
+            reqs_old = f.read().split('\n')
+        reqs = list(reqs_old)
+        for pkg in pkgs:
+            if pkg in reqs_old:
+                continue
+            reqs.append(pkg)
+        print('New requirements:', reqs)
+        with open('requirements.txt', 'w') as f:
+            f.write('\n'.join(reqs))
+        _ec = os.system('pip3 install --prefix=deps -r requirements.txt --no-compile --force-reinstall')
+        if _ec != 0:
+            raise Exception("Failed to install packages")
+        print_output("Installed packages ({}) to {}".format(_pkgs, target))
+    else:
+        raise Exception("Target of {} is unknown".format(target))
+
+
+@cli.command(name="stream-cfn")
+@click.argument('stack-name', type=click.STRING, default='')
+def cmd_stream_cfn(stack_name):
+    if stack_name == '':
+        stack_name = TEST_STACK_NAME
+    stream_cfn_events(stack_name)
 
 
 @cli.command(name='test-deploy')
-# @click.argument('pkgs', nargs=-1)
-@click.argument('stack-name', type=click.STRING, default="test-voting-stack")
+@click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=False)
 @click.option("--open-browser/--no-open-browser", default=False)
 @click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True)
+@click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
+@click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING, help="the ssh key with which to configure EC2 nodes.")
 @click.pass_context
-def test_stack(ctx, stack_name, deploy, open_browser, del_packaged_tmpl):
+def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name):
+    if stack_name == '':
+        stack_name = TEST_STACK_NAME
+
+    if deploy:
+        await_in_prog(stack_name)
+
     TMP_TMPL_FILE = 'tmp-stack.yaml'
     obj_key = "templates/" + STACK_TMPL.split('/')[-1]
     must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}".format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
@@ -78,80 +255,38 @@ def test_stack(ctx, stack_name, deploy, open_browser, del_packaged_tmpl):
     obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
 
     params = {
-        'NamePrefix': 'testnet',
+        'NamePrefix': TEST_NAMEPREFIX,
         'HostedZone': 'Z2NVOFJHPZ9S2O',
         'EC2InstanceType': 't3.micro',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '1',
-        'Subdomain': 'testnet',
-        'SSHKey': 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt',
+        'Subdomain': TEST_SUBDOMAIN,
+        'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
     }
-    params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k,v in params.items()]
-
-    cfn = boto3.client('cloudformation')
-
-    def await_in_prog():
-        def is_in_prog():
-            s = get_stack()
-            return s and 'IN_PROGRESS' in s['StackStatus']
-        while is_in_prog():
-            time.sleep(0.1)
-
-    def stack_exists():
-        s = get_stack()
-        return s and s['StackStatus'] != 'DELETE_COMPLETE'
-
-    def get_stack():
-        ss = list(filter(lambda s: s['StackName'] == stack_name, cfn.list_stacks()['StackSummaries']))
-        if len(ss) > 0:
-            return ss[0]
-        return None
-
-    def delete_stack():
-        r = cfn.delete_stack(StackName=stack_name)
-        while stack_exists():
-            time.sleep(0.1)
-        return r
-
-    def stack_del_if_necessary():
-        if get_stack()['StackStatus'] == 'ROLLBACK_COMPLETE':
-            logging.warning("Deleting {} as it's in ROLLBACK_COMPLETE".format(stack_name))
-            delete_stack()
-
-    def create_stack():
-        r = cfn.create_stack(
-            StackName=stack_name,
-            TemplateURL=obj_url,
-            Parameters=params_aws,
-            Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
-            OnFailure="DELETE",
-            TimeoutInMinutes=3
-        )
-        return r['StackId']
-
-    def update_stack():
-        r = cfn.update_stack(
-            StackName=stack_name,
-            TemplateURL=obj_url,
-            Parameters=params_aws,
-            Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
-        )
-        return r['StackId']
+    params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
 
     if deploy:
-        await_in_prog()
-        stack_del_if_necessary()
-        if stack_exists():
-            sid = update_stack()
+        await_in_prog(stack_name)
+        stack_del_if_necessary(stack_name)
+        if stack_exists(stack_name):
+            sid = update_stack(stack_name, obj_url, params_aws)
         else:
-            sid = create_stack()
-        s = get_stack()
+            sid = create_stack(stack_name, obj_url, params_aws)
+        # s = get_stack(stack_name)
         cfn_url = "https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/{}/events".format(urllib.parse.quote(sid, safe=''))
         open_cmd = "explorer.exe \"{}\"".format(cfn_url)
         if open_browser:
             os.system(open_cmd)
-        print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_url))
+        if watch:
+            stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+            if stack_failed(stack_name):
+                msgs = ["{}: {}".format(a,b) for (a,b) in get_failed_msgs(stack_name)]
+                print_output("Deploy failed. Msgs: \n\n{}".format('\n'.join(msgs)))
+            else:
+                print_output("Deploy Success! {}".format(cfn_url))
+        else:
+            print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_url))
 
     else:
         cfn_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))

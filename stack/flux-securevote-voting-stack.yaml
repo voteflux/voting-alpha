@@ -69,6 +69,7 @@ Metadata:
       AdminEmail:
         default: The email address of the administrator. Various configuration items will be emailed following the stack deployment. Additionally alerts from the production system will also be forwarded here.
 
+
 Parameters:
   NamePrefix:
     Description: A DNS compatible name prefix to use in the names of resources (e.g. fluxvote-testnet)
@@ -76,6 +77,10 @@ Parameters:
   AdminEmail:
     Description: The email address for the administrator. Alerts and configuration items will be sent here, including SSH keys.
     Type: String
+  SSHEncryptionPassword:
+    Description: A password to encrypt the generated SSH key with (which is emailed to Admin). Only required if an SSHKey is not provided.
+    Type: String
+    Default: ''
   
   HostedZone:
     Description: The hosted zone to use for domains
@@ -153,6 +158,18 @@ Parameters:
       - c5.18xlarge
     ConstraintDescription: Please choose a valid instance type.
 
+
+Conditions:
+  cHasSSHKey:
+    Fn::Not: [!Equals [ !Ref SSHKey, '' ]]
+  cHasSSHEncPw:
+    Fn::Not: [!Equals [ !Ref SSHEncryptionPassword, '' ]]
+  cShouldGenEc2SSHKey:
+    Fn::And:
+      - !Not [{ Condition: cHasSSHKey }]
+      - { Condition: cHasSSHEncPw }
+
+
 Mappings:
   RegionToResourceRegion:
     us-east-1:
@@ -216,12 +233,31 @@ Resources:
 
   rKms:
     Type: AWS::KMS::Key
+    Properties:
+      KeyPolicy:
+        Statement:
+          - Effect: Allow
+            Resource: '*'
+            Action:
+              - kms:Decrypt
+              - kms:Encrypt
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+          - Effect: Allow
+            Resource: '*'
+            Action: kms:*
+            Principal:
+              AWS:
+                - !Sub arn:aws:iam::${AWS::AccountId}:root
+#            AWS:
+#              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${NamePrefix}-crypto-params-cr
 
   rKmsAlias:
     Type: AWS::KMS::Alias
     Properties:
-      AliasName: !Sub ${NamePrefix}-general-kms-key
-      TargetKeyId: !Ref rKms
+      AliasName: !Sub alias/${NamePrefix}-general-kms-key
+      TargetKeyId: !GetAtt rKms.Arn
 
   rPublicSG:
     Type: AWS::EC2::SecurityGroup
@@ -254,6 +290,15 @@ Resources:
     Type: Custom::Params
     Properties:
       ServiceToken: !GetAtt rParamsLambda.Arn
+      NamePrefix: !Ref NamePrefix
+      SSHKey: !Ref SSHKey
+      ShouldGenEc2SSHKey: !If [ cShouldGenEc2SSHKey, 'true', '' ]
+      StaticBucketName: !Ref rStaticBucket
+      AdminEmail: !Ref AdminEmail
+      NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
+      NPublicNodes: !Ref NumberOfEthereumPublicNodes
+      SSHEncryptionPassword: !Ref SSHEncryptionPassword
+
 
   rParamsLambda:
     Type: AWS::Serverless::Function
@@ -263,13 +308,33 @@ Resources:
       Handler: 'index.handler'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
       Timeout: 30
-      KmsKeyArn: !Ref rKmsAlias
+#      KmsKeyArn: !GetAtt rKmsAlias.Arn
       Policies:
         - Statement:
+          -
             Effect: Allow
             Action: ssm:PutParameter
             Resource:
-              - !Sub "${NamePrefix}-param-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${NamePrefix}-param-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/${NamePrefix}-nodekey-consensus-*"
+          -
+            Effect: Allow
+            Action:
+              - ec2:CreateKeyPair
+              - ec2:DeleteKeyPair
+              - ec2:ImportKeyPair
+            Resource:
+              - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key*
+              - !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key
+          -
+            Effect: Allow
+            Action:
+              - ec2:DescribeKeyPairs
+            Resource: '*'
+          -
+            Effect: Allow
+            Action: s3:*
+            Resource: !GetAtt rStaticBucket.Arn
 
 
   # EthereumCommonStack:
