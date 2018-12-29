@@ -379,27 +379,27 @@ Resources:
 #      SubnetId: !Ref rVpc
 
 
-  rNodeAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-      VPCZoneIdentifier: [!Ref rSubnet1]
-      LaunchConfigurationName:
-        Ref: rNodeLaunchConfig
-      MinSize: '1'
-      MaxSize:
-        Ref: NumberOfEthereumPublicNodes
-      DesiredCapacity:
-        Ref: NumberOfEthereumPublicNodes
-#      Tags:
-#        - Key: Name
-#          Value: !Ref InstanceNames
-#          PropagateAtLaunch: 'true'
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT10M
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: 'true'
+#  rNodeAutoScalingGroup:
+#    Type: AWS::AutoScaling::AutoScalingGroup
+#    Properties:
+#      VPCZoneIdentifier: [!Ref rSubnet1]
+#      LaunchConfigurationName:
+#        Ref: rNodeLaunchConfig
+#      MinSize: '1'
+#      MaxSize:
+#        Ref: NumberOfEthereumPublicNodes
+#      DesiredCapacity:
+#        Ref: NumberOfEthereumPublicNodes
+##      Tags:
+##        - Key: Name
+##          Value: !Ref InstanceNames
+##          PropagateAtLaunch: 'true'
+#    CreationPolicy:
+#      ResourceSignal:
+#        Timeout: PT10M
+#    UpdatePolicy:
+#      AutoScalingReplacingUpdate:
+#        WillReplace: 'true'
 
   rNodeLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
