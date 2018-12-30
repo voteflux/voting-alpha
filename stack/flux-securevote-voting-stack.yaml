@@ -303,6 +303,7 @@ Resources:
       NPublicNodes: !Ref NumberOfEthereumPublicNodes
       SSHEncryptionPassword: !Ref SSHEncryptionPassword
       Nonce: !Ref Nonce
+      BlockGasLimit: !Ref BlockGasLimit
 
 
   rParamsLambda:
@@ -312,7 +313,7 @@ Resources:
       Runtime: python3.6
       Handler: 'index.handler'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
-      Timeout: 30
+      Timeout: 300
 #      KmsKeyArn: !GetAtt rKmsAlias.Arn
       Policies:
         - Statement:
@@ -379,27 +380,27 @@ Resources:
 #      SubnetId: !Ref rVpc
 
 
-#  rNodeAutoScalingGroup:
-#    Type: AWS::AutoScaling::AutoScalingGroup
-#    Properties:
-#      VPCZoneIdentifier: [!Ref rSubnet1]
-#      LaunchConfigurationName:
-#        Ref: rNodeLaunchConfig
-#      MinSize: '1'
-#      MaxSize:
-#        Ref: NumberOfEthereumPublicNodes
-#      DesiredCapacity:
-#        Ref: NumberOfEthereumPublicNodes
-##      Tags:
-##        - Key: Name
-##          Value: !Ref InstanceNames
-##          PropagateAtLaunch: 'true'
-#    CreationPolicy:
-#      ResourceSignal:
-#        Timeout: PT10M
-#    UpdatePolicy:
-#      AutoScalingReplacingUpdate:
-#        WillReplace: 'true'
+  rPublicNodeAutoScalingGroup:
+    Type: AWS::AutoScaling::AutoScalingGroup
+    Properties:
+      VPCZoneIdentifier: [!Ref rSubnet1]
+      LaunchConfigurationName:
+        Ref: rNodeLaunchConfig
+      MinSize: '1'
+      MaxSize:
+        Ref: NumberOfEthereumPublicNodes
+      DesiredCapacity:
+        Ref: NumberOfEthereumPublicNodes
+#      Tags:
+#        - Key: Name
+#          Value: !Ref InstanceNames
+#          PropagateAtLaunch: 'true'
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT20M
+    UpdatePolicy:
+      AutoScalingReplacingUpdate:
+        WillReplace: 'true'
 
   rNodeLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -420,7 +421,42 @@ Resources:
             - "\n"
             - "yum install -y aws-cfn-bootstrap"
             - "\n"
-#            - Ref: LaunchScriptText
+            - Fn::Join:
+                - "\n"
+                - - "sudo yum install -y docker" # Install docker
+                  - "sudo service docker start" # Start docker
+                  - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
+                  # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
+                  - !Sub "aws s3 cp s3://${StaticBucketName}/chain/chainspec.json ./chainspec.json && sudo mv ./chainspec.json /chainspec.json"
+                  - Fn::Join:
+                    - " "
+                    - - !Sub "docker run -d --network=host -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity"
+                      - "--chain /chainspec.json"
+                      - "--logging=info"
+                      - "--jsonrpc-apis"
+                      - "web3,net,eth"
+                      - "--jsonrpc-interface=all"
+                      - "--jsonrpc-cors=all"
+                      - "--ws-apis=web3,net,eth"
+                      - "--ws-interface=all"
+                      - "--ws-origins=all"
+#                      - Fn::If:
+#                          - EthStatsCondition
+#                          - Fn::Join:
+#                              - " "
+#                              - - "--ethstats-ws-url"
+#                                - "ws://localhost:80"
+#                                - "--ethstats-ws-secret"
+#                                - Ref: EthStatsSecret
+#                          - ""
+#                  - Fn::If:
+#                      - EthStatsCondition
+#                      - !Sub "docker run -d -p 80:80 -e \"WS_SECRET=${EthStatsSecret}\" -e \"PORT=80\" ${EthStatsDockerImage}"
+#                      - ""
+#                  - Fn::If:
+#                      - EthExplorerCondition
+#                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
+#                      - ""
             - "\n"
             - "res=$?"
             - "\n"
@@ -429,9 +465,11 @@ Resources:
             - "/opt/aws/bin/cfn-signal -e $res "
             - "         --stack "
             - Ref: AWS::StackName
-            - "         --resource ServiceAutoScalingGroup "
+            - "         --resource rPublicNodeAutoScalingGroup "
             - "         --region "
             - Ref: AWS::Region
+            - "\n"
+            - "docker ps"
             - "\n"
 
 

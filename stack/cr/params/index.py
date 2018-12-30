@@ -6,8 +6,10 @@ import signal
 import traceback
 from urllib.request import build_opener, HTTPHandler, Request
 
-import os
+import os, sys
 os.environ['PYTHONPATH'] = os.environ['PYTHONPATH'] + (':' if os.environ['PYTHONPATH'] else '') + os.path.dirname(os.path.realpath(__file__)) + '/deps'
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
+print("PYTHONPATH:", os.environ['PYTHONPATH'])
 
 from lib import *
 
@@ -19,12 +21,15 @@ def do_create(props: dict):
     data = {}
     data.update(generate_ec2_key(**props))
 
-    keys = generate_node_keys(**props)
-    data.update(save_node_keys(keys, **props))
+    ssm_keys, poa_pks = generate_node_keys(**props)
+    data.update(save_node_keys(ssm_keys, **props))
 
     data.update(gen_eth_stats_secret(**props))
+
     data.update(gen_network_id(**props))
-    data.update(upload_chain_config(**props))
+
+    data.update(upload_chain_config(**data, **props))
+
     data.update({"Message": "Success: Node Keys, EthStats Secret, NetworkID, ChainConfig, (Optional) EC2 Key Generation"})
 
     return data

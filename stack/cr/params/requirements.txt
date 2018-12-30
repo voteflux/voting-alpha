@@ -1,2 +1,3 @@
 toml
 tabulate
+eth-account
