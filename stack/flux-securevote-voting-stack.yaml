@@ -422,6 +422,7 @@ Resources:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
 #      VPCZoneIdentifier: [!Ref rSubnet1]
+      AutoScalingGroupName: !Sub "sv-${NamePrefix}-autoscaling-${Nonce}"
       AvailabilityZones:
         - !Sub ${AWS::Region}a
         - !Sub ${AWS::Region}b
@@ -429,17 +430,15 @@ Resources:
       LaunchConfigurationName:
         Ref: rNodeLaunchConfig
       MinSize: '1'
-      MaxSize:
-        Ref: NumberOfEthereumPublicNodes
-      DesiredCapacity:
-        Ref: NumberOfEthereumPublicNodes
-#      Tags:
-#        - Key: Name
-#          Value: !Ref InstanceNames
-#          PropagateAtLaunch: 'true'
+      MaxSize: !Ref NumberOfEthereumPublicNodes
+      DesiredCapacity: !Ref NumberOfEthereumPublicNodes
+      Tags:
+        - Key: Name
+          Value: !Ref Nonce
+          PropagateAtLaunch: 'true'
     CreationPolicy:
       ResourceSignal:
-        Timeout: PT20M
+        Timeout: PT10M
     UpdatePolicy:
       AutoScalingReplacingUpdate:
         WillReplace: 'true'
@@ -454,13 +453,14 @@ Resources:
         - Ref: rPublicSG
       InstanceType:
         Ref: EC2InstanceType
+      InstanceMonitoring: false
       KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
 #      IamInstanceProfile:
 #        Ref:
-      BlockDeviceMappings:
-        - DeviceName: /dev/sda1
-          Ebs:
-            VolumeSize: 100
+#      BlockDeviceMappings:
+#        - DeviceName: /dev/sda1
+#          Ebs:
+#            VolumeSize: 100
       UserData:
         Fn::Base64:
           Fn::Join:
@@ -489,6 +489,12 @@ Resources:
                       - "--ws-interface=all"
                       - "--ws-origins=all"
                       - "--pruning=archive"
+                  - "docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
+                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '[\"*\"]'"
+                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '[\"PUT\", \"GET\", \"POST\"]'"
+                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '[\"true\"]'"
+                  - "docker exec ipfsd ipfs shutdown"
+                  - "docker start ipfsd"
 #                      - Fn::If:
 #                          - EthStatsCondition
 #                          - Fn::Join:
@@ -506,7 +512,6 @@ Resources:
 #                      - EthExplorerCondition
 #                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
 #                      - ""
-                  - "docker run -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
             - "\n"
             - "res=$?"
             - "\n"

@@ -158,7 +158,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, **params) -
     NetworkId = params['NetworkId']
     hex_network_id = hex(NetworkId)
 
-    INIT_BAL = 160693804425899027554196209234
+    INIT_BAL = hex(160693804425899027554196209234)
 
     builtins = {"0000000000000000000000000000000000000001": {
         "builtin": {"balance": "1", "name": "ecrecover", "pricing": {"linear": {"base": 3000, "word": 0}}}},

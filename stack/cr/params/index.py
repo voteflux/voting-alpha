@@ -37,7 +37,7 @@ def do_create(props: dict):
 
 def do_delete(props):
     data = {}
-    data.update(remove_s3_bucket(**props))
+    # data.update(remove_s3_bucket(**props))
     return data
 
 
