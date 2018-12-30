@@ -35,6 +35,12 @@ def do_create(props: dict):
     return data
 
 
+def do_delete(props):
+    data = {}
+    data.update(remove_s3_bucket(**props))
+    return data
+
+
 def handler(event: dict, context):
     '''Handle Lambda event from AWS'''
     # Setup alarm for remaining runtime minus a second
@@ -52,6 +58,9 @@ def handler(event: dict, context):
             send_response(event, context, "SUCCESS", data)
         elif event['RequestType'] == 'Delete':
             LOGGER.info('DELETE!')
+
+            do_delete(event['ResourceProperties'])
+
             send_response(event, context, "SUCCESS",
                           {"Message": "Resource deletion successful!"})
         else:

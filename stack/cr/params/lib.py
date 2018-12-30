@@ -28,6 +28,12 @@ def get_some_entropy() -> bytes:
     return _hash(b''.join(sources))
 
 
+def remove_s3_bucket(StaticBucketName, StackTesting, **params):
+    if StackTesting:
+        return {'DeletedS3Bucket': str(boto3.resource('s3').Bucket(StaticBucketName).objects.filter().delete())}
+    return {}
+
+
 def generate_ec2_key(ShouldGenEc2SSHKey: bool, NamePrefix: str, SSHEncryptionPassword: str, AdminEmail, **kwargs):
     logging.info("gen_ec2_key: %s", {'ShouldGenEc2SSHKey': ShouldGenEc2SSHKey, 'NamePrefix': NamePrefix})
     ret = {'CreatedEc2KeyPair': False}
@@ -62,7 +68,7 @@ def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list):
     _e = get_some_entropy()
     keys = []
     poa_pks = []
-    for i in range(20):  # max nConsensusNodes
+    for i in range(int(NConsensusNodes)):  # max nConsensusNodes
         _h = _hash(_e)
         _privkey = '0x' + binascii.hexlify(_h[:32]).decode()
         _e = _h[32:]
@@ -96,7 +102,11 @@ def save_node_keys(keys: list, NamePrefix, **kwargs):
             skipped_params.append(k['Name'])
         else:
             logging.info("Creating SSM param: %s", k['Name'])
-            ssm.put_parameter(**k)
+            try:
+                ssm.put_parameter(**k)
+            except Exception as e:
+                if 'ParameterAlreadyExists' not in repr(e):
+                    raise e
     return {'SavedConsensusNodePrivKeys': True, 'SkippedConsensusNodePrivKeys': skipped_params}
 
 

@@ -117,7 +117,7 @@ def create_stack(stack_name, obj_url, params_aws):
         Parameters=params_aws,
         Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         OnFailure="DELETE",
-        TimeoutInMinutes=3
+        TimeoutInMinutes=15
     )
     return r['StackId']
 
@@ -134,7 +134,8 @@ def update_stack(stack_name, obj_url, params_aws):
 
 def get_failed_msgs(stack_name):
     evts_after = get_stack(stack_name)['LastUpdatedTime']
-    evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+
+    evts = cfn.describe_stack_events(StackName=stack_name, MaxItems=100)['StackEvents']
     evts_notable = list(
         filter(lambda evt:
                ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and evt[
@@ -271,7 +272,7 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
         'HostedZone': 'Z2NVOFJHPZ9S2O',
-        'EC2InstanceType': 't3.micro',
+        'EC2InstanceType': 't2.micro',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '1',
         'Subdomain': TEST_SUBDOMAIN,

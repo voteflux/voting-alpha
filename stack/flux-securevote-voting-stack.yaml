@@ -264,7 +264,7 @@ Resources:
     Properties:
       GroupName: !Sub ${NamePrefix}-nodes-public-sg
       GroupDescription: SG for publicly accessible EC2 nodes (Eth + IPFS)
-      VpcId: !Ref rVpc
+#      VpcId: !Ref rVpc
       SecurityGroupIngress:
         - IpProtocol: tcp
           FromPort: 8545
@@ -286,9 +286,9 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
-      SecurityGroupEgress:
-        - IpProtocol: "-1"
-          CidrIp: 0.0.0.0/0
+#      SecurityGroupEgress:
+#        - IpProtocol: "-1"
+#          CidrIp: 0.0.0.0/0
 
   rParamsCr:
     Type: Custom::Params
@@ -304,6 +304,7 @@ Resources:
       SSHEncryptionPassword: !Ref SSHEncryptionPassword
       Nonce: !Ref Nonce
       BlockGasLimit: !Ref BlockGasLimit
+      StackTesting: 'true'  # set to '' to disable
 
 
   rParamsLambda:
@@ -347,20 +348,55 @@ Resources:
               - !GetAtt rStaticBucket.Arn
               - !Sub ${rStaticBucket.Arn}/*
 
-  rVpc:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: 10.13.37.0/24
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
+#  rVpc:
+#    Type: AWS::EC2::VPC
+#    Properties:
+#      CidrBlock: 10.13.37.0/20  # should be 10.13.32.0 -> 10.13.47.255
+#      EnableDnsSupport: true
+#      EnableDnsHostnames: true
+#
+#  rSubnet1:  # todo: more than 1 subnet / availability zone
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      AvailabilityZone: !Sub ${AWS::Region}a
+#      CidrBlock: 10.13.37.0/24
+#      MapPublicIpOnLaunch: true
+#      VpcId: !Ref rVpc
 
-  rSubnet1:  # todo: more than 1 subnet / availability zone
-    Type: AWS::EC2::Subnet
-    Properties:
-      AvailabilityZone: !Sub ${AWS::Region}a
-      CidrBlock: 10.13.37.0/24
-      MapPublicIpOnLaunch: true
-      VpcId: !Ref rVpc
+#  rRouteTable:
+#    Type: AWS::EC2::RouteTable
+#    Properties:
+#      VpcId: !Ref rVpc
+#
+#  rNatForSubnet1:
+#    Type: AWS::EC2::NatGateway
+#    Properties:
+#      AllocationId: !GetAtt rVpcElasticIP.AllocationId
+#      SubnetId: !Ref rSubnet1
+#
+#  rVpcElasticIP:
+#    Type: AWS::EC2::EIP
+#    Properties:
+#      Domain: vpc
+#
+#  rNatRoute:
+#    Type: AWS::EC2::Route
+#    DependsOn:
+#      - rNatForSubnet1
+#    Properties:
+#      RouteTableId: !Ref rRouteTable
+#      DestinationCidrBlock: 0.0.0.0/0
+#      NatGatewayId: !Ref rVpc
+#
+#  rVpcInternetGateway:
+#    Type: AWS::EC2::InternetGateway
+#
+#  rVpcGatewayAttachement:
+#    Type: AWS::EC2::VPCGatewayAttachment
+#    Properties:
+#      InternetGatewayId: !Ref rVpcInternetGateway
+#      VpcId: !Ref rVpc
+
 
 #  # todo, use include or something to template this out
 #  rEc2Node0:
@@ -383,7 +419,11 @@ Resources:
   rPublicNodeAutoScalingGroup:
     Type: AWS::AutoScaling::AutoScalingGroup
     Properties:
-      VPCZoneIdentifier: [!Ref rSubnet1]
+#      VPCZoneIdentifier: [!Ref rSubnet1]
+      AvailabilityZones:
+        - !Sub ${AWS::Region}a
+        - !Sub ${AWS::Region}b
+        - !Sub ${AWS::Region}c
       LaunchConfigurationName:
         Ref: rNodeLaunchConfig
       MinSize: '1'
@@ -404,6 +444,8 @@ Resources:
 
   rNodeLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
+    DependsOn:
+      - rParamsCr
     Properties:
       ImageId: !Ref pAmiId
       SecurityGroups:
@@ -423,18 +465,18 @@ Resources:
             - "\n"
             - Fn::Join:
                 - "\n"
-                - - "sudo yum install -y docker" # Install docker
+                - - "sudo amazon-linux-extras install docker" # Install docker;; previously 'sudo yum install -y docker'
                   - "sudo service docker start" # Start docker
                   - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
                   # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
-                  - !Sub "aws s3 cp s3://${StaticBucketName}/chain/chainspec.json ./chainspec.json && sudo mv ./chainspec.json /chainspec.json"
+                  - "mkdir parityVolume"
+                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O parityVolume/chainspec.json"
                   - Fn::Join:
                     - " "
-                    - - !Sub "docker run -d --network=host -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity"
-                      - "--chain /chainspec.json"
+                    - - !Sub "docker run -d --network=host --mount source=parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
+                      - "--chain=/static/chainspec.json"
                       - "--logging=info"
-                      - "--jsonrpc-apis"
-                      - "web3,net,eth"
+                      - "--jsonrpc-apis=web3,net,eth"
                       - "--jsonrpc-interface=all"
                       - "--jsonrpc-cors=all"
                       - "--ws-apis=web3,net,eth"
