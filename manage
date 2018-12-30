@@ -135,7 +135,7 @@ def update_stack(stack_name, obj_url, params_aws):
 def get_failed_msgs(stack_name):
     evts_after = get_stack(stack_name)['LastUpdatedTime']
 
-    evts = cfn.describe_stack_events(StackName=stack_name, MaxItems=100)['StackEvents']
+    evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
     evts_notable = list(
         filter(lambda evt:
                ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and evt[
@@ -272,9 +272,9 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
         'HostedZone': 'Z2NVOFJHPZ9S2O',
-        'EC2InstanceType': 't2.micro',
+        'EC2InstanceType': 't2.small',
         'NumberOfEthereumConsensusNodes': '1',
-        'NumberOfEthereumPublicNodes': '1',
+        'NumberOfEthereumPublicNodes': '2',
         'Subdomain': TEST_SUBDOMAIN,
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',

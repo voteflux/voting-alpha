@@ -64,16 +64,23 @@ def priv_to_addr(_priv):
     return Account.privateKeyToAccount(_priv).address
 
 
-def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list):
+def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list):
     _e = get_some_entropy()
-    keys = []
-    poa_pks = []
-    for i in range(int(NConsensusNodes)):  # max nConsensusNodes
+
+    def gen_next_key():
+        nonlocal _e
         _h = _hash(_e)
         _privkey = '0x' + binascii.hexlify(_h[:32]).decode()
         _e = _h[32:]
         assert len(_e) >= 32
         pk = priv_to_addr(_privkey)
+        return _privkey, pk
+
+    keys = []
+    poa_pks = []
+    service_pks = []
+    for i in range(int(NConsensusNodes)):  # max nConsensusNodes
+        (_privkey, pk) = gen_next_key()
         keys.append({'Name': "sv-{}-nodekey-consensus-{}".format(NamePrefix, i),
                      'Description': "Private key for consensus node #{}".format(i),
                      'Value': _privkey, 'Type': 'SecureString'})
@@ -81,7 +88,15 @@ def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list):
                      'Description': "Public address of consensus node #{}".format(i),
                      'Value': pk, 'Type': 'String'})
         poa_pks.append(pk)
-    return keys, poa_pks
+
+    for eth_service in ["publish", "members", "castvote"]:
+        (_privkey, pk) = gen_next_key()
+        keys.append({'Name': "sv-{}-nodekey-service-{}".format(NamePrefix, eth_service),
+                     'Description': "Private key for service lambda: {}".format(eth_service),
+                     'Value': _privkey, 'Type': 'SecureString'})
+        service_pks.append(pk)
+
+    return keys, poa_pks, service_pks
 
 
 def save_node_keys(keys: list, NamePrefix, **kwargs):
@@ -120,8 +135,8 @@ def gen_eth_stats_secret(**kwargs):
     }
 
 
-def upload_chain_config(StaticBucketName, **params):
-    chainspec = json.dumps(gen_chainspec_json([], [], **params))
+def upload_chain_config(poa_pks, service_pks, StaticBucketName, **params):
+    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, **params))
     ret = {'ChainSpec': chainspec}
     obj_key = 'chain/chainspec.json'
     s3 = boto3.client('s3')

@@ -323,7 +323,9 @@ Resources:
             Action: ssm:PutParameter
             Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodeaddr-consensus-*"
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-consensus-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-service-*"
           -
             Effect: Allow
             Action:
@@ -455,6 +457,10 @@ Resources:
       KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
 #      IamInstanceProfile:
 #        Ref:
+      BlockDeviceMappings:
+        - DeviceName: /dev/sda1
+          Ebs:
+            VolumeSize: 100
       UserData:
         Fn::Base64:
           Fn::Join:
@@ -469,11 +475,11 @@ Resources:
                   - "sudo service docker start" # Start docker
                   - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
                   # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
-                  - "mkdir parityVolume"
-                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O parityVolume/chainspec.json"
+                  - "mkdir /parityVolume"
+                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O /parityVolume/chainspec.json"
                   - Fn::Join:
                     - " "
-                    - - !Sub "docker run -d --network=host --mount source=parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
+                    - - !Sub "docker run -d --network=host --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
                       - "--chain=/static/chainspec.json"
                       - "--logging=info"
                       - "--jsonrpc-apis=web3,net,eth"
@@ -482,6 +488,7 @@ Resources:
                       - "--ws-apis=web3,net,eth"
                       - "--ws-interface=all"
                       - "--ws-origins=all"
+                      - "--pruning=archive"
 #                      - Fn::If:
 #                          - EthStatsCondition
 #                          - Fn::Join:
@@ -499,6 +506,7 @@ Resources:
 #                      - EthExplorerCondition
 #                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
 #                      - ""
+                  - "docker run -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
             - "\n"
             - "res=$?"
             - "\n"

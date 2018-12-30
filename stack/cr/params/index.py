@@ -21,14 +21,14 @@ def do_create(props: dict):
     data = {}
     data.update(generate_ec2_key(**props))
 
-    ssm_keys, poa_pks = generate_node_keys(**props)
+    ssm_keys, poa_pks, service_pks = generate_node_keys(**props)
     data.update(save_node_keys(ssm_keys, **props))
 
     data.update(gen_eth_stats_secret(**props))
 
     data.update(gen_network_id(**props))
 
-    data.update(upload_chain_config(**data, **props))
+    data.update(upload_chain_config(poa_pks, service_pks, **data, **props))
 
     data.update({"Message": "Success: Node Keys, EthStats Secret, NetworkID, ChainConfig, (Optional) EC2 Key Generation"})
 
