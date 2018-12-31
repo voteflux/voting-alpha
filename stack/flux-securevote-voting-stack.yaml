@@ -231,6 +231,29 @@ Resources:
             AllowedOrigins: [ '*' ]
             MaxAge: 86400
 
+  rStaticBucketCleanupCr:
+    Type: Custom::StaticBucketCleanup
+    Properties:
+      ServiceToken: !GetAtt rStaticBucketCleanupLambda.Arn
+      NamePrefix: !Ref NamePrefix
+      StaticBucketName: !Ref rStaticBucket
+
+  rStaticBucketCleanupLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'index.handler_bucket_cleanup'
+      FunctionName: !Sub ${NamePrefix}-bucket-cleanup-cr
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action: s3:*
+              Resource:
+                - !GetAtt rStaticBucket.Arn
+                - !Sub ${rStaticBucket.Arn}/*
+
   rKms:
     Type: AWS::KMS::Key
     Properties:
@@ -302,17 +325,18 @@ Resources:
       NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
       NPublicNodes: !Ref NumberOfEthereumPublicNodes
       SSHEncryptionPassword: !Ref SSHEncryptionPassword
-      Nonce: !Ref Nonce
       BlockGasLimit: !Ref BlockGasLimit
       StackTesting: 'true'  # set to '' to disable
 
-
   rParamsLambda:
     Type: AWS::Serverless::Function
+    DependsOn:
+      - rNamePrefixStaticCr
+      - rEthPrivkeysCr
     Properties:
       CodeUri: './cr/params'
       Runtime: python3.6
-      Handler: 'index.handler'
+      Handler: 'index.handler_params'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
       Timeout: 300
 #      KmsKeyArn: !GetAtt rKmsAlias.Arn
@@ -320,12 +344,12 @@ Resources:
         - Statement:
           -
             Effect: Allow
-            Action: ssm:PutParameter
+            Action:
+              - ssm:GetParameter
+              - ssm:PutParameter
+              - ssm:DeleteParameter
             Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodeaddr-consensus-*"
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-consensus-*"
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-service-*"
           -
             Effect: Allow
             Action:
@@ -349,6 +373,54 @@ Resources:
             Resource:
               - !GetAtt rStaticBucket.Arn
               - !Sub ${rStaticBucket.Arn}/*
+
+
+  rEthPrivkeysCr:
+    Type: Custom::EthPrivkeys
+    Properties:
+      ServiceToken: !GetAtt rEthPrivkeysLambda.Arn
+      NamePrefix: !Ref NamePrefix
+      NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
+
+  rEthPrivkeysLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'index.handler_priv_keys'
+      FunctionName: !Sub ${NamePrefix}-eth-priv-keys-cr
+      Timeout: 30
+      Policies:
+        - Statement:
+            - Effect: Allow
+              Action:
+                - ssm:PutParameter
+                - ssm:DeleteParameter
+                - ssm:DeleteParameters
+              Resource:
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-consensus-*"
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-service-*"
+            - Effect: Allow
+              Action:
+                - ssm:DescribeParameters
+              Resource: '*'
+
+  rNamePrefixStaticCr:
+    Type: Custom::EthPrivkeys
+    Properties:
+      ServiceToken: !GetAtt rNamePrefixStaticLambda.Arn
+      NamePrefix: !Ref NamePrefix
+
+  rNamePrefixStaticLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'index.handler_prevent_nameprefix_change'
+      FunctionName: !Sub ${NamePrefix}-nameprefix-static-cr
+      Timeout: 30
+      Policies: []
 
 #  rVpc:
 #    Type: AWS::EC2::VPC

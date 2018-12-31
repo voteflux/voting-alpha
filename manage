@@ -3,6 +3,7 @@
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
+from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
 
@@ -18,9 +19,9 @@ import click
 S3_DEV_BUCKET = "flux-scratch"
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
-TEST_STACK_NAME = "test-voting-stack"
-TEST_SUBDOMAIN = "testnet"
-TEST_NAMEPREFIX = "testnet"
+TEST_STACK_NAME = "testnet-alpha-stack"
+TEST_SUBDOMAIN = "testnet-alpha"
+TEST_NAMEPREFIX = "testnetalpha"
 
 MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
 
@@ -133,13 +134,13 @@ def update_stack(stack_name, obj_url, params_aws):
 
 
 def get_failed_msgs(stack_name):
-    evts_after = get_stack(stack_name)['LastUpdatedTime']
+    evts_after = get_stack(stack_name).get('LastUpdatedTime', None)
 
     evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
     evts_notable = list(
         filter(lambda evt:
-               ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and evt[
-                   'Timestamp'] > evts_after, evts))
+               ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and
+               (evts_after is None or evt['Timestamp'] > evts_after), evts))
     evts_w_dupes = list([(evt['LogicalResourceId'], evt.get('ResourceStatusReason', evt)) for evt in evts_notable])
     resources_done = set()
     evts_final = []

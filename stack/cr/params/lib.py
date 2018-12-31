@@ -11,6 +11,11 @@ import boto3
 
 from eth_account.account import Account
 
+from utils import *
+
+SERVICES = ["publish", "members", "castvote"]
+
+ssm = boto3.client('ssm')
 
 
 def http_get(url: str) -> bytes:
@@ -28,10 +33,8 @@ def get_some_entropy() -> bytes:
     return _hash(b''.join(sources))
 
 
-def remove_s3_bucket(StaticBucketName, StackTesting, **params):
-    if StackTesting:
-        return {'DeletedS3Bucket': str(boto3.resource('s3').Bucket(StaticBucketName).objects.filter().delete())}
-    return {}
+def remove_s3_bucket_objs(StaticBucketName, **params):
+    return {'DeletedS3Bucket': str(boto3.resource('s3').Bucket(StaticBucketName).objects.filter().delete())}
 
 
 def generate_ec2_key(ShouldGenEc2SSHKey: bool, NamePrefix: str, SSHEncryptionPassword: str, AdminEmail, **kwargs):
@@ -64,7 +67,31 @@ def priv_to_addr(_priv):
     return Account.privateKeyToAccount(_priv).address
 
 
-def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list):
+def gen_ssm_nodekey_consensus(NamePrefix, i):
+    return "sv-{}-nodekey-consensus-{}".format(NamePrefix, i)
+
+
+def gen_ssm_nodekey_service(NamePrefix, eth_service):
+    return "sv-{}-nodekey-service-{}".format(NamePrefix, eth_service)
+
+
+def gen_ssm_key_poa_pks(NamePrefix):
+    return 'sv-{}-param-poa-pks'.format(NamePrefix)
+
+
+def gen_ssm_service_pks(NamePrefix):
+    return 'sv-{}-param-service-pks'.format(NamePrefix)
+
+
+def gen_ssm_networkid(NamePrefix):
+    return 'sv-{}-param-networkid'.format(NamePrefix)
+
+
+def gen_ssm_eth_stats_secret(NamePrefix):
+    return 'sv-{}-param-ethstatssecret'.format(NamePrefix)
+
+
+def create_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list):
     _e = get_some_entropy()
 
     def gen_next_key():
@@ -81,17 +108,14 @@ def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, li
     service_pks = []
     for i in range(int(NConsensusNodes)):  # max nConsensusNodes
         (_privkey, pk) = gen_next_key()
-        keys.append({'Name': "sv-{}-nodekey-consensus-{}".format(NamePrefix, i),
+        keys.append({'Name': gen_ssm_nodekey_consensus(NamePrefix, i),
                      'Description': "Private key for consensus node #{}".format(i),
                      'Value': _privkey, 'Type': 'SecureString'})
-        keys.append({'Name': "sv-{}-param-poa-pk-{}".format(NamePrefix, i),
-                     'Description': "Public address of consensus node #{}".format(i),
-                     'Value': pk, 'Type': 'String'})
         poa_pks.append(pk)
 
-    for eth_service in ["publish", "members", "castvote"]:
+    for eth_service in SERVICES:
         (_privkey, pk) = gen_next_key()
-        keys.append({'Name': "sv-{}-nodekey-service-{}".format(NamePrefix, eth_service),
+        keys.append({'Name': gen_ssm_nodekey_service(NamePrefix, eth_service),
                      'Description': "Private key for service lambda: {}".format(eth_service),
                      'Value': _privkey, 'Type': 'SecureString'})
         service_pks.append(pk)
@@ -100,7 +124,6 @@ def generate_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, li
 
 
 def save_node_keys(keys: list, NamePrefix, **kwargs):
-    ssm = boto3.client('ssm')
     existing_ssm = ssm.describe_parameters(ParameterFilters=[
         {'Key': 'Name', 'Option': 'BeginsWith',
          'Values': [
@@ -117,26 +140,65 @@ def save_node_keys(keys: list, NamePrefix, **kwargs):
             skipped_params.append(k['Name'])
         else:
             logging.info("Creating SSM param: %s", k['Name'])
-            try:
-                ssm.put_parameter(**k)
-            except Exception as e:
-                if 'ParameterAlreadyExists' not in repr(e):
-                    raise e
+            ssm.put_parameter(**k)
     return {'SavedConsensusNodePrivKeys': True, 'SkippedConsensusNodePrivKeys': skipped_params}
 
 
-def gen_network_id(**kwargs):
-    return {'NetworkId': secrets.randbits(32)}
+def save_poa_pks(poa_pks, NamePrefix, **props):
+    ssm.put_parameter(Name=gen_ssm_key_poa_pks(NamePrefix),
+                      Description="PoA addresses (as in chainspec)",
+                      Value=json.dumps(poa_pks),
+                      Type='String')
+    return {"SavedPoaPks": True}
 
 
-def gen_eth_stats_secret(**kwargs):
-    return {
+def save_service_pks(service_pks, NamePrefix, **props):
+    ssm.put_parameter(Name=gen_ssm_service_pks(NamePrefix),
+                      Description="Eth Services (Lambda) addresses (as in chainspec)",
+                      Value=json.dumps(service_pks),
+                      Type='String')
+    return {"SavedPoaPks": True}
+
+
+def delete_all_node_keys(NamePrefix, NConsensusNodes, **props):
+    ssm.delete_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))
+    consensus_node_keys = [gen_ssm_nodekey_consensus(NamePrefix, i) for i in range(int(NConsensusNodes))]
+    chunks = chunk(consensus_node_keys, 10)
+    for c in chunks:
+        ssm.delete_parameters(Names=c)
+    ssm.delete_parameter(Name=gen_ssm_service_pks(NamePrefix))
+    ssm.delete_parameters(Names=list([gen_ssm_nodekey_service(NamePrefix, service) for service in SERVICES]))
+    return {"DeletedAllNodeKeys": True}
+
+
+def gen_network_id(NamePrefix, **kwargs):
+    network_id = secrets.randbits(32)
+    ret = {'NetworkId': network_id}
+    ssm.put_parameter(Name=gen_ssm_networkid(NamePrefix), Value=str(network_id),
+                      Description='NetworkId for eth network', Type='String')
+    return ret
+
+
+def gen_eth_stats_secret(NamePrefix, **kwargs):
+    ret = {
         'EthStatsSecret': ''.join([secrets.choice(string.ascii_letters + string.digits) for _ in range(20)])
     }
+    ssm.put_parameter(Name=gen_ssm_eth_stats_secret(NamePrefix), Value=ret['EthStatsSecret'],
+                      Description='Secret for EthStats',
+                      Type='SecureString')
+    return ret
 
 
-def upload_chain_config(poa_pks, service_pks, StaticBucketName, **params):
-    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, **params))
+def del_ssm_networkid_ethstats(NamePrefix, **props):
+    ssm.delete_parameter(Name=gen_ssm_eth_stats_secret(NamePrefix))
+    ssm.delete_parameter(Name=gen_ssm_networkid(NamePrefix))
+    return {'DeletedSSMNetworkIdAndEthStats': True}
+
+
+def upload_chain_config(NamePrefix, StaticBucketName, **params):
+    poa_pks = json.loads(ssm.get_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))['Parameter']['Value'])
+    service_pks = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])
+    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, NamePrefix=NamePrefix, **params))
     ret = {'ChainSpec': chainspec}
     obj_key = 'chain/chainspec.json'
     s3 = boto3.client('s3')
