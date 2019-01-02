@@ -308,6 +308,7 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         'Subdomain': TEST_SUBDOMAIN,
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
+        'pDeployMacros': 'false',
         # 'Nonce': str(int(time.time()))
     }
     params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]

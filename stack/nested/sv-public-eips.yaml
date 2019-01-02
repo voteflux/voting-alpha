@@ -8,6 +8,11 @@ Transform:
 Parameters:
   pNPublicNodes:
     Type: String
+  pDependsShim:
+    Type: String
+    Default: ''
+    Description: "This parameter is a shim because DependsOn cannot include functions"
+
 
 Resources:
 
@@ -16,7 +21,7 @@ Resources:
     Type: AWS::EC2::EIP
 
 Outputs:
-  oEips:
+  oPublicIps:
     Value: !Ref rEip0
   oEipAllocationIds:
     Value: !GetAtt rEip0.AllocationId

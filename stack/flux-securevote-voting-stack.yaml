@@ -159,6 +159,9 @@ Parameters:
   pAmiId:
     Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
+  pDeployMacros:
+    Type: String
+    AllowedValues: ['true', 'false']
 
 
 Conditions:
@@ -170,12 +173,17 @@ Conditions:
     Fn::And:
       - !Not [{ Condition: cHasSSHKey }]
       - { Condition: cHasSSHEncPw }
-
-
-
+  cDeployMacros:
+    !Equals [ !Ref pDeployMacros, 'true' ]
 
 
 Resources:
+
+  rMacroStack:
+    Condition: cDeployMacros
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./sv-macros.yaml
 
   rStaticBucket:
     Type: AWS::S3::Bucket
@@ -476,135 +484,6 @@ Resources:
 #      VpcId: !Ref rVpc
 
 
-#  # todo, use include or something to template this out
-#  rEc2Node0:
-#    Type: AWS::EC2::Instance
-#    Properties:
-#      ImageId: !Ref pAmiId
-#      KeyName: !Sub sv-${NamePrefix}-node-ec2-ssh-key
-#      InstanceType: !Ref EC2InstanceType
-#      SecurityGroups: [!Ref rPublicSG]
-#      BlockDeviceMappings:
-#        - DeviceName: /dev/sda1
-#          Ebs:
-#            VolumeSize: 50
-#      AvailabilityZone: !Sub ${AWS::Region}a
-#      EbsOptimized: true
-#      InstanceInitiatedShutdownBehavior: stop
-#      SubnetId: !Ref rVpc
-
-#
-#  rPublicNodeAutoScalingGroup:
-#    Type: AWS::AutoScaling::AutoScalingGroup
-#    Properties:
-##      VPCZoneIdentifier: [!Ref rSubnet1]
-#      AutoScalingGroupName: !Sub "sv-${NamePrefix}-autoscaling-${Nonce}"
-#      AvailabilityZones:
-#        - !Sub ${AWS::Region}a
-#        - !Sub ${AWS::Region}b
-#        - !Sub ${AWS::Region}c
-#      LaunchConfigurationName:
-#        Ref: rNodeLaunchConfig
-#      MinSize: '1'
-#      MaxSize: !Ref NumberOfEthereumPublicNodes
-#      DesiredCapacity: !Ref NumberOfEthereumPublicNodes
-#      Tags:
-#        - Key: Name
-#          Value: !Sub sv-${NamePrefix}-public-${Nonce}
-#          PropagateAtLaunch: true
-#    CreationPolicy:
-#      ResourceSignal:
-#        Timeout: PT10M
-#    UpdatePolicy:
-#      AutoScalingReplacingUpdate:
-#        WillReplace: true
-#
-#  rNodeLaunchConfig:
-#    Type: AWS::AutoScaling::LaunchConfiguration
-#    DependsOn:
-#      - rParamsCr
-#    Properties:
-#      ImageId: !Ref pAmiId
-#      SecurityGroups:
-#        - Ref: rPublicSG
-#      InstanceType:
-#        Ref: EC2InstanceType
-#      InstanceMonitoring: false
-#      KeyName: !Sub sv-${NamePrefix}-node-ec2-ssh-key
-##      IamInstanceProfile:
-##        Ref:
-#      BlockDeviceMappings:
-#        - DeviceName: "/dev/xvda"
-#          Ebs:
-#            VolumeSize: 100
-#            DeleteOnTermination: true
-#      UserData:
-#        Fn::Base64:
-#          Fn::Join:
-#          - ''
-#          - - "#!/bin/bash -x"
-#            - "\n"
-#            - "yum install -y aws-cfn-bootstrap"
-#            - "\n"
-#            - Fn::Join:
-#                - "\n"
-#                - - "sudo amazon-linux-extras install docker" # Install docker;; previously 'sudo yum install -y docker'
-#                  - "sudo service docker start" # Start docker
-#                  - "sudo systemctl enable docker"
-#                  - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
-#                  # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
-#                  - "mkdir /parityVolume"
-#                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O /parityVolume/chainspec.json"
-#                  - Fn::Join:
-#                    - " "
-#                    - - "docker run -d --network=host --restart=always --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
-#                      - "--chain=/static/chainspec.json"
-#                      - "--logging=info"
-#                      - "--jsonrpc-apis=web3,net,eth"
-#                      - "--jsonrpc-interface=all"
-#                      - "--jsonrpc-cors=all"
-#                      - "--ws-apis=web3,net,eth"
-#                      - "--ws-interface=all"
-#                      - "--ws-origins=all"
-#                      - "--pruning=archive"
-#                  - "docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
-#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '[\"*\"]'"
-#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '[\"PUT\", \"GET\", \"POST\"]'"
-#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '[\"true\"]'"
-#                  - "docker exec ipfsd ipfs shutdown"
-#                  - "docker start ipfsd"
-##                      - Fn::If:
-##                          - EthStatsCondition
-##                          - Fn::Join:
-##                              - " "
-##                              - - "--ethstats-ws-url"
-##                                - "ws://localhost:80"
-##                                - "--ethstats-ws-secret"
-##                                - Ref: EthStatsSecret
-##                          - ""
-##                  - Fn::If:
-##                      - EthStatsCondition
-##                      - !Sub "docker run -d -p 80:80 -e \"WS_SECRET=${EthStatsSecret}\" -e \"PORT=80\" ${EthStatsDockerImage}"
-##                      - ""
-##                  - Fn::If:
-##                      - EthExplorerCondition
-##                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
-##                      - ""
-#            - "\n"
-#            - "res=$?"
-#            - "\n"
-#            - "echo $res"
-#            - "\n"
-#            - "/opt/aws/bin/cfn-signal -e $res "
-#            - "         --stack "
-#            - Ref: AWS::StackName
-#            - "         --resource rPublicNodeAutoScalingGroup "
-#            - "         --region "
-#            - Ref: AWS::Region
-#            - "\n"
-#            - "docker ps"
-#            - "\n"
-
   # todo: macro these out
   rConsensusNode0:
     Type: AWS::CloudFormation::Stack
@@ -637,7 +516,7 @@ Resources:
         pAvailabilityZone: !Sub ${AWS::Region}a
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
-        pEipAddress: !Select [ 0, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oEips ] ]
+        pEipAddress: !Select [ 0, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oPublicIps ] ]
 
   rPublicNodeEips:
     Type: AWS::CloudFormation::Stack
@@ -645,8 +524,7 @@ Resources:
       TemplateURL: ./nested/sv-public-eips.yaml
       Parameters:
         pNPublicNodes: !Ref NumberOfEthereumPublicNodes
-
-
+        pDependsShim: !If [ cDeployMacros, !Ref rMacroStack, !Ref rStaticBucket ]
 
 Outputs:
   oChainSpecUrl:
