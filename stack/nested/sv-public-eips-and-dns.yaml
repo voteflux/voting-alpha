@@ -8,14 +8,6 @@ Transform:
 Parameters:
   pNPublicNodes:
     Type: String
-#  pNamePrefix:
-#    Type: String
-#  pAvailabilityZone:
-#    Type: String
-  pDomain:
-    Type: String
-  pSubdomain:
-    Type: String
 
 Resources:
 
@@ -23,20 +15,8 @@ Resources:
   rEip0:
     Type: AWS::EC2::EIP
 
-  rDomainName0:
-    Type: AWS::Route53::RecordSet
-    Properties:
-      HostedZoneName: !Ref pDomain
-      Name: !Sub pnode-0.${pSubdomain}.${pDomain}
-      TTL: '60'
-      Type: A
-      ResourceRecords:
-        - !Ref rEip0
-
 Outputs:
-  oPublicIps:
+  oEips:
     Value: !Ref rEip0
   oEipAllocationIds:
     Value: !GetAtt rEip0.AllocationId
-  oDomainNames:
-    Value: !Ref rDomainName0

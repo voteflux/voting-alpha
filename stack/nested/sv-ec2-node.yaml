@@ -1,7 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Parameters:
-  pChainSpecUrl:
-    Type: String
   pEC2InstanceType:
     Type: String
   pSecurityGroup:
@@ -14,8 +12,6 @@ Parameters:
     Type: String
   pAvailabilityZone:
     Type: String
-  pSignerAddress:
-    Type: String
   pDomain:
     Type: String
   pSubdomain:
@@ -23,22 +19,25 @@ Parameters:
   pNodeType:
     Type: String
     AllowedValues: ['consensus', 'public']
-  pEipIpAddress:
+  pEipAddress:
     Type: String
     Default: ''
+  pVolumeSize:
+    Type: Number
+    Default: 50
   pLaunchScript:
     Type: String
 
 Conditions:
-  cAssociateEip: !Not [ !Equals [ !Ref pEipIpAddress, '' ] ]
+  cAssociateEip: !Not [ !Equals [ !Ref pEipAddress, '' ] ]
 
 Resources:
 
   rEipAssociation:
-    Condition: cAssociateEip
     Type: AWS::EC2::EIPAssociation
+    Condition: cAssociateEip
     Properties:
-      EIP: !Ref pEipIpAddress
+      EIP: !Ref pEipAddress
       InstanceId: !Ref rEc2Instance
 
   rRole:
@@ -74,17 +73,17 @@ Resources:
       - rPolicy
     Properties:
       Roles: [ !Ref rRole ]
-      InstanceProfileName: !Sub sv-${pNamePrefix}-${pNodeType}node-${pNodeNumber}-instanceprofile
+      InstanceProfileName: !Sub sv-${pNamePrefix}-${pNodeType}-node-${pNodeNumber}-instanceprofile
 
   rDomainName:
     Type: AWS::Route53::RecordSet
     Properties:
       HostedZoneName: !Ref pDomain
-      Name: !Sub cnode-${pNodeNumber}.${pSubdomain}.${pDomain}
+      Name: !Sub ${pNodeType}-node-${pNodeNumber}.${pSubdomain}.${pDomain}
       TTL: 60
       Type: A
       ResourceRecords:
-        - !GetAtt rEc2Instance.PublicIp
+        - !If [ cAssociateEip, !Ref pEipAddress, !GetAtt rEc2Instance.PublicIp ]
 
   rEc2Instance:
     Type: AWS::EC2::Instance
@@ -93,7 +92,7 @@ Resources:
         Timeout: PT5M
     Properties:
       ImageId: !Ref pAmiId
-      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+      KeyName: !Sub sv-${pNamePrefix}-node-ec2-ssh-key
       InstanceType: !Ref pEC2InstanceType
       SecurityGroups: [ !Ref pSecurityGroup ]
       AvailabilityZone: !Ref pAvailabilityZone
@@ -102,16 +101,26 @@ Resources:
       BlockDeviceMappings:
         - DeviceName: "/dev/xvda"
           Ebs:
-            VolumeSize: "50"
+            VolumeSize: !Ref pVolumeSize
             DeleteOnTermination: true
       Tags:
         - Key: Name
           Value: !Sub sv-${pNamePrefix}-${pNodeType}-${pNodeNumber}
       UserData:
-        Fn::Base64: !Ref pLaunchScript
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+          yum install -y aws-cfn-bootstrap
+          ${pLaunchScript}
+          res=$?
+          echo $res
+          /opt/aws/bin/cfn-signal -e $res \
+            --stack ${AWS::StackName} \
+            --resource rEc2Instance \
+            --region ${AWS::Region}
+          echo -e "\n\n---- done ----\n\n"
 
 Outputs:
-  oPublicIP:
+  oPublicIp:
     Value: !GetAtt rEc2Instance.PublicIp
   oDomainName:
     Value: !Ref rDomainName

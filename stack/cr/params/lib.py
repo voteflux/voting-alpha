@@ -41,7 +41,7 @@ def remove_s3_bucket_objs(StaticBucketName, **params):
 def generate_ec2_key(ShouldGenEc2SSHKey: bool, NamePrefix: str, SSHEncryptionPassword: str, AdminEmail, **kwargs):
     logging.info("gen_ec2_key: %s", {'ShouldGenEc2SSHKey': ShouldGenEc2SSHKey, 'NamePrefix': NamePrefix})
     ret = {'CreatedEc2KeyPair': False}
-    KeyPairName = "{}-sv-node-ec2-ssh-key".format(NamePrefix)  # , int(time.time()))
+    KeyPairName = "sv-{}-node-ec2-ssh-key".format(NamePrefix)  # , int(time.time()))
     ret['KeyPairName'] = KeyPairName
     ec2 = boto3.client('ec2')
     kps = ec2.describe_key_pairs()
@@ -123,12 +123,16 @@ def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (li
                      'Value': _privkey, 'Type': 'SecureString'})
         poa_pks.append(pk)
 
+    logging.info(f"poa_pks: {poa_pks}")
+
     for eth_service in SERVICES:
         (_privkey, pk) = gen_next_key()
         keys.append({'Name': gen_ssm_nodekey_service(NamePrefix, eth_service),
                      'Description': "Private key for service lambda: {}".format(eth_service),
                      'Value': _privkey, 'Type': 'SecureString'})
         service_pks.append(pk)
+
+    logging.info(f"service_pks: {service_pks}")
 
     for i in range(int(NPublicNodes)):
         (_privkey, _) = gen_next_key(hex_prefix='')
@@ -137,6 +141,8 @@ def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (li
                      'Description': "ENODE Private key for public node #{} (not address)".format(i),
                      'Value': _privkey, 'Type': 'SecureString'})
         enode_pks.append(pk)
+
+    logging.info(f"enode_pks: {enode_pks}")
 
     return {'ssm_keys': keys, 'poa_pks': poa_pks, 'service_pks': service_pks, 'enode_pks': enode_pks}
 

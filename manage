@@ -172,7 +172,7 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                 evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
                 resources = {}
                 _resources_order = []
-                for evt in evts[::-1][:15]:  # start from last event
+                for evt in evts[::-1]:  # start from last event
                     resources[evt['LogicalResourceId']] = {'status': evt['ResourceStatus'], 'ts': evt['Timestamp']}
                     _resources_order.insert(0, evt['LogicalResourceId'])
 
@@ -181,7 +181,7 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                 l_num = 1
                 for r in _resources_order:
                     if r in resources:
-                        if l_num > stdscr_width - 4:
+                        if l_num > stdscr_height - 2:
                             break
                         _r = resources[r]
                         text_win.addstr(l_num, 0, '{} - {} - {}'.format(r, _r['status'], str(_r['ts'])))
@@ -285,7 +285,7 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         'Subdomain': TEST_SUBDOMAIN,
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
-        'Nonce': str(int(time.time()))
+        # 'Nonce': str(int(time.time()))
     }
     params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
 

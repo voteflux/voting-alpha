@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  pChainSpecUrl:
+    Type: String
+  pEC2InstanceType:
+    Type: String
+  pSecurityGroup:
+    Type: String
+  pAmiId:
+    Type: String
+  pNodeNumber:
+    Type: String
+  pNamePrefix:
+    Type: String
+  pAvailabilityZone:
+    Type: String
+  pSignerAddress:
+    Type: String
+  pDomain:
+    Type: String
+  pSubdomain:
+    Type: String
+
+Resources:
+
+  rNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./sv-ec2-node.yaml
+      Parameters:
+        pEC2InstanceType: !Ref pEC2InstanceType
+        pSecurityGroup: !Ref pSecurityGroup
+        pAmiId: !Ref pAmiId
+        pNodeNumber: !Ref pNodeNumber
+        pNamePrefix: !Ref pNamePrefix
+        pAvailabilityZone: !Ref pAvailabilityZone
+        pDomain: !Ref pDomain
+        pSubdomain: !Ref pSubdomain
+        pNodeType: 'consensus'
+        pVolumeSize: 50
+        pLaunchScript: !Sub |
+          sudo amazon-linux-extras install docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          mkdir -p /parityVolume/chaindata
+          mkdir -p /parityVolume/static
+          wget ${pChainSpecUrl} -O /parityVolume/static/chainspec.json
+          # since users ec2-user and parity share UIDs...
+          chown -R ec2-user:ec2-user /parityVolume
+          docker run --name parity-tmp -d --network=host \
+            --mount type=bind,source=/parityVolume/static,target=/static \
+            --mount type=bind,source=/parityVolume/chaindata,target=/home/parity/.local/share/io.parity.ethereum \
+            -p 8545:8545 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+              --chain=/static/chainspec.json \
+              --logging=info \
+              --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
+              --jsonrpc-interface=local
+          docker logs parity-tmp
+          set +x
+          ACCOUNT_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber} --region ${AWS::Region} --with-decryption --query Parameter.Value --output text)
+          curl --data "{\"method\":\"parity_newAccountFromSecret\",\"params\":[\"$ACCOUNT_SECRET\",\"password\"],\"id\":1,\"jsonrpc\":\"2.0\"}" -H "Content-Type: application/json" -X POST localhost:8545
+          set -x
+          docker stop parity-tmp
+          docker rm parity-tmp
+          ls -R /parityVolume
+          echo "password" > /parityVolume/static/password.txt
+          docker run --name parity -d --network=host --restart=always \
+            --mount type=bind,source=/parityVolume/static,target=/static \
+            --mount type=bind,source=/parityVolume/chaindata,target=/home/parity/.local/share/io.parity.ethereum \
+            -p 8545:8545 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+              --chain=/static/chainspec.json \
+              --logging=info \
+              --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
+              --jsonrpc-interface=local \
+              --reseal-on-txs=all \
+              --engine-signer=${pSignerAddress} --password=/static/password.txt \
+              --reseal-min-period=2000 --reseal-max-period=6000
+          res=$?
+          docker ps
+          docker logs parity
+          [[ "$res" == "0" ]]
+
+Outputs:
+  oPublicIp:
+    Value: !GetAtt rNodeStack.Outputs.oPublicIp
+  oDomainName:
+    Value: !GetAtt rNodeStack.Outputs.oDomainName

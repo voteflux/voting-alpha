@@ -80,10 +80,6 @@ Parameters:
     Description: A password to encrypt the generated SSH key with (which is emailed to Admin). Only required if an SSHKey is not provided.
     Type: String
     Default: ''
-  Nonce:
-    Description: A random string used to ensure subsequent deploys can recreate custom resources appropriately. This is safe to ignore on first deploy.
-    Type: String
-    Default: ''
 
   HostedZoneDomain:
     Description: The hosted zone domain to use for subdomains
@@ -203,7 +199,7 @@ Resources:
     Properties:
       RoleName: !Sub sv-${NamePrefix}-macro-lambda-exe-role
       AssumeRolePolicyDocument:
-        Version: 2012-10-17
+        Version: '2012-10-17'
         Statement:
           - Effect: Allow
             Principal:
@@ -213,7 +209,7 @@ Resources:
       Policies:
         - PolicyName: !Sub sv-${NamePrefix}-macro-lambda-exe-policy
           PolicyDocument:
-            Version: 2012-10-17
+            Version: '2012-10-17'
             Statement:
               - Effect: Allow
                 Action: ['logs:*']
@@ -278,33 +274,33 @@ Resources:
                 - !GetAtt rStaticBucket.Arn
                 - !Sub ${rStaticBucket.Arn}/*
 
-  rKms:
-    Type: AWS::KMS::Key
-    Properties:
-      KeyPolicy:
-        Statement:
-          - Effect: Allow
-            Resource: '*'
-            Action:
-              - kms:Decrypt
-              - kms:Encrypt
-            Principal:
-              Service:
-                - lambda.amazonaws.com
-          - Effect: Allow
-            Resource: '*'
-            Action: kms:*
-            Principal:
-              AWS:
-                - !Sub arn:aws:iam::${AWS::AccountId}:root
-#            AWS:
-#              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${NamePrefix}-crypto-params-cr
-
-  rKmsAlias:
-    Type: AWS::KMS::Alias
-    Properties:
-      AliasName: !Sub alias/${NamePrefix}-general-kms-key
-      TargetKeyId: !GetAtt rKms.Arn
+#  rKms:
+#    Type: AWS::KMS::Key
+#    Properties:
+#      KeyPolicy:
+#        Statement:
+#          - Effect: Allow
+#            Resource: '*'
+#            Action:
+#              - kms:Decrypt
+#              - kms:Encrypt
+#            Principal:
+#              Service:
+#                - lambda.amazonaws.com
+#          - Effect: Allow
+#            Resource: '*'
+#            Action: kms:*
+#            Principal:
+#              AWS:
+#                - !Sub arn:aws:iam::${AWS::AccountId}:root
+##            AWS:
+##              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${NamePrefix}-crypto-params-cr
+#
+#  rKmsAlias:
+#    Type: AWS::KMS::Alias
+#    Properties:
+#      AliasName: !Sub alias/${NamePrefix}-general-kms-key
+#      TargetKeyId: !GetAtt rKms.Arn
 
   rConsensusSG:
     Type: AWS::EC2::SecurityGroup
@@ -404,8 +400,8 @@ Resources:
             Resource:
               - '*'
               # It's unfortunate but we can't do resource level stuff with ec2:*KeyPair actions: https://docs.aws.amazon.com/AWSEC2/latest/APIReference/ec2-api-permissions.html#ec2-api-unsupported-resource-permissions
-              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key*
-              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/${NamePrefix}-sv-node-ec2-ssh-key
+              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/sv-${NamePrefix}-node-ec2-ssh-key*
+              #- !Sub arn:aws:ec2:${AWS::Region}:${AWS::AccountId}:key-pair/sv-${NamePrefix}-node-ec2-ssh-key
           -
             Effect: Allow
             Action:
@@ -524,7 +520,7 @@ Resources:
 #    Type: AWS::EC2::Instance
 #    Properties:
 #      ImageId: !Ref pAmiId
-#      KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
+#      KeyName: !Sub sv-${NamePrefix}-node-ec2-ssh-key
 #      InstanceType: !Ref EC2InstanceType
 #      SecurityGroups: [!Ref rPublicSG]
 #      BlockDeviceMappings:
@@ -536,122 +532,122 @@ Resources:
 #      InstanceInitiatedShutdownBehavior: stop
 #      SubnetId: !Ref rVpc
 
-
-  rPublicNodeAutoScalingGroup:
-    Type: AWS::AutoScaling::AutoScalingGroup
-    Properties:
-#      VPCZoneIdentifier: [!Ref rSubnet1]
-      AutoScalingGroupName: !Sub "sv-${NamePrefix}-autoscaling-${Nonce}"
-      AvailabilityZones:
-        - !Sub ${AWS::Region}a
-        - !Sub ${AWS::Region}b
-        - !Sub ${AWS::Region}c
-      LaunchConfigurationName:
-        Ref: rNodeLaunchConfig
-      MinSize: '1'
-      MaxSize: !Ref NumberOfEthereumPublicNodes
-      DesiredCapacity: !Ref NumberOfEthereumPublicNodes
-      Tags:
-        - Key: Name
-          Value: !Sub sv-${NamePrefix}-public-${Nonce}
-          PropagateAtLaunch: true
-    CreationPolicy:
-      ResourceSignal:
-        Timeout: PT10M
-    UpdatePolicy:
-      AutoScalingReplacingUpdate:
-        WillReplace: true
-
-  rNodeLaunchConfig:
-    Type: AWS::AutoScaling::LaunchConfiguration
-    DependsOn:
-      - rParamsCr
-    Properties:
-      ImageId: !Ref pAmiId
-      SecurityGroups:
-        - Ref: rPublicSG
-      InstanceType:
-        Ref: EC2InstanceType
-      InstanceMonitoring: false
-      KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
-#      IamInstanceProfile:
-#        Ref:
-      BlockDeviceMappings:
-        - DeviceName: "/dev/xvda"
-          Ebs:
-            VolumeSize: 100
-            DeleteOnTermination: true
-      UserData:
-        Fn::Base64:
-          Fn::Join:
-          - ''
-          - - "#!/bin/bash -x"
-            - "\n"
-            - "yum install -y aws-cfn-bootstrap"
-            - "\n"
-            - Fn::Join:
-                - "\n"
-                - - "sudo amazon-linux-extras install docker" # Install docker;; previously 'sudo yum install -y docker'
-                  - "sudo service docker start" # Start docker
-                  - "sudo systemctl enable docker"
-                  - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
-                  # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
-                  - "mkdir /parityVolume"
-                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O /parityVolume/chainspec.json"
-                  - Fn::Join:
-                    - " "
-                    - - "docker run -d --network=host --restart=always --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
-                      - "--chain=/static/chainspec.json"
-                      - "--logging=info"
-                      - "--jsonrpc-apis=web3,net,eth"
-                      - "--jsonrpc-interface=all"
-                      - "--jsonrpc-cors=all"
-                      - "--ws-apis=web3,net,eth"
-                      - "--ws-interface=all"
-                      - "--ws-origins=all"
-                      - "--pruning=archive"
-                  - "docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
-                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '[\"*\"]'"
-                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '[\"PUT\", \"GET\", \"POST\"]'"
-                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '[\"true\"]'"
-                  - "docker exec ipfsd ipfs shutdown"
-                  - "docker start ipfsd"
-#                      - Fn::If:
-#                          - EthStatsCondition
-#                          - Fn::Join:
-#                              - " "
-#                              - - "--ethstats-ws-url"
-#                                - "ws://localhost:80"
-#                                - "--ethstats-ws-secret"
-#                                - Ref: EthStatsSecret
-#                          - ""
-#                  - Fn::If:
-#                      - EthStatsCondition
-#                      - !Sub "docker run -d -p 80:80 -e \"WS_SECRET=${EthStatsSecret}\" -e \"PORT=80\" ${EthStatsDockerImage}"
-#                      - ""
-#                  - Fn::If:
-#                      - EthExplorerCondition
-#                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
-#                      - ""
-            - "\n"
-            - "res=$?"
-            - "\n"
-            - "echo $res"
-            - "\n"
-            - "/opt/aws/bin/cfn-signal -e $res "
-            - "         --stack "
-            - Ref: AWS::StackName
-            - "         --resource rPublicNodeAutoScalingGroup "
-            - "         --region "
-            - Ref: AWS::Region
-            - "\n"
-            - "docker ps"
-            - "\n"
+#
+#  rPublicNodeAutoScalingGroup:
+#    Type: AWS::AutoScaling::AutoScalingGroup
+#    Properties:
+##      VPCZoneIdentifier: [!Ref rSubnet1]
+#      AutoScalingGroupName: !Sub "sv-${NamePrefix}-autoscaling-${Nonce}"
+#      AvailabilityZones:
+#        - !Sub ${AWS::Region}a
+#        - !Sub ${AWS::Region}b
+#        - !Sub ${AWS::Region}c
+#      LaunchConfigurationName:
+#        Ref: rNodeLaunchConfig
+#      MinSize: '1'
+#      MaxSize: !Ref NumberOfEthereumPublicNodes
+#      DesiredCapacity: !Ref NumberOfEthereumPublicNodes
+#      Tags:
+#        - Key: Name
+#          Value: !Sub sv-${NamePrefix}-public-${Nonce}
+#          PropagateAtLaunch: true
+#    CreationPolicy:
+#      ResourceSignal:
+#        Timeout: PT10M
+#    UpdatePolicy:
+#      AutoScalingReplacingUpdate:
+#        WillReplace: true
+#
+#  rNodeLaunchConfig:
+#    Type: AWS::AutoScaling::LaunchConfiguration
+#    DependsOn:
+#      - rParamsCr
+#    Properties:
+#      ImageId: !Ref pAmiId
+#      SecurityGroups:
+#        - Ref: rPublicSG
+#      InstanceType:
+#        Ref: EC2InstanceType
+#      InstanceMonitoring: false
+#      KeyName: !Sub sv-${NamePrefix}-node-ec2-ssh-key
+##      IamInstanceProfile:
+##        Ref:
+#      BlockDeviceMappings:
+#        - DeviceName: "/dev/xvda"
+#          Ebs:
+#            VolumeSize: 100
+#            DeleteOnTermination: true
+#      UserData:
+#        Fn::Base64:
+#          Fn::Join:
+#          - ''
+#          - - "#!/bin/bash -x"
+#            - "\n"
+#            - "yum install -y aws-cfn-bootstrap"
+#            - "\n"
+#            - Fn::Join:
+#                - "\n"
+#                - - "sudo amazon-linux-extras install docker" # Install docker;; previously 'sudo yum install -y docker'
+#                  - "sudo service docker start" # Start docker
+#                  - "sudo systemctl enable docker"
+#                  - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
+#                  # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
+#                  - "mkdir /parityVolume"
+#                  - !Sub "wget ${rParamsCr.ChainSpecUrl} -O /parityVolume/chainspec.json"
+#                  - Fn::Join:
+#                    - " "
+#                    - - "docker run -d --network=host --restart=always --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
+#                      - "--chain=/static/chainspec.json"
+#                      - "--logging=info"
+#                      - "--jsonrpc-apis=web3,net,eth"
+#                      - "--jsonrpc-interface=all"
+#                      - "--jsonrpc-cors=all"
+#                      - "--ws-apis=web3,net,eth"
+#                      - "--ws-interface=all"
+#                      - "--ws-origins=all"
+#                      - "--pruning=archive"
+#                  - "docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs"
+#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '[\"*\"]'"
+#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '[\"PUT\", \"GET\", \"POST\"]'"
+#                  - "docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '[\"true\"]'"
+#                  - "docker exec ipfsd ipfs shutdown"
+#                  - "docker start ipfsd"
+##                      - Fn::If:
+##                          - EthStatsCondition
+##                          - Fn::Join:
+##                              - " "
+##                              - - "--ethstats-ws-url"
+##                                - "ws://localhost:80"
+##                                - "--ethstats-ws-secret"
+##                                - Ref: EthStatsSecret
+##                          - ""
+##                  - Fn::If:
+##                      - EthStatsCondition
+##                      - !Sub "docker run -d -p 80:80 -e \"WS_SECRET=${EthStatsSecret}\" -e \"PORT=80\" ${EthStatsDockerImage}"
+##                      - ""
+##                  - Fn::If:
+##                      - EthExplorerCondition
+##                      - !Sub "docker run -d -p 8080:8080 -e \"IS_LOCAL_GETH=true\" -e \"PORT=8080\" ${EthExplorerDockerImage}"
+##                      - ""
+#            - "\n"
+#            - "res=$?"
+#            - "\n"
+#            - "echo $res"
+#            - "\n"
+#            - "/opt/aws/bin/cfn-signal -e $res "
+#            - "         --stack "
+#            - Ref: AWS::StackName
+#            - "         --resource rPublicNodeAutoScalingGroup "
+#            - "         --region "
+#            - Ref: AWS::Region
+#            - "\n"
+#            - "docker ps"
+#            - "\n"
 
   rConsensusNode0:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: ./nested/sv-consensus-node.yaml
+      TemplateURL: ./nested/sv-consensus-node-new.yaml
       Parameters:
         pChainSpecUrl: !GetAtt rParamsCr.ChainSpecUrl
         pEC2InstanceType: !Ref EC2InstanceType
@@ -664,6 +660,22 @@ Resources:
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
 
+  rPublicNode0:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./nested/sv-public-node-new.yaml
+      Parameters:
+        pChainSpecUrl: !GetAtt rParamsCr.ChainSpecUrl
+        pEC2InstanceType: !Ref EC2InstanceType
+        pSecurityGroup: !Ref rPublicSG
+        pAmiId: !Ref pAmiId
+        pNodeNumber: '0'
+        pNamePrefix: !Ref NamePrefix
+        pAvailabilityZone: !Sub ${AWS::Region}a
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+        pEipAddress: !Select [ 0, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oEips ] ]
+
   rPublicNodeEips:
     Type: AWS::CloudFormation::Stack
     DependsOn:
@@ -672,8 +684,6 @@ Resources:
       TemplateURL: ./nested/sv-public-eips-and-dns.yaml
       Parameters:
         pNPublicNodes: !Ref NumberOfEthereumPublicNodes
-        pDomain: !Ref HostedZoneDomain
-        pSubdomain: !Ref Subdomain
 
 
   # EthereumCommonStack:
@@ -805,14 +815,12 @@ Resources:
 Outputs:
   oChainSpecUrl:
     Value: !GetAtt rParamsCr.ChainSpecUrl
-  oChainSpec:
-    Value: !GetAtt rParamsCr.ChainSpec
   oEthNetworkId:
     Value: !GetAtt rParamsCr.NetworkId
   oEc2KeyPairName:
     Value: !GetAtt rParamsCr.KeyPairName
-  oStaticUrl:
-    Value: !Sub "http://static.${Subdomain}.${HostedZoneDomain}"
+  oStaticDomain:
+    Value: !Sub "static.${Subdomain}.${HostedZoneDomain}"
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

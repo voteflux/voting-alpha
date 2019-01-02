@@ -29,16 +29,16 @@ def macro(event, context, **kwargs):
         rs[f"rEip{i}"] = {
             'Type': "AWS::EC2::EIP"
         }
-        rs[f"rDomainName{i}"] = {
-            'Type': "AWS::Route53::RecordSet",
-            'Properties': {
-                'HostedZoneName': {"Ref": "pDomain"},
-                'Name': {"Fn::Sub": f"pnode-{i}.${{pSubdomain}}.${{pDomain}}"},
-                "TTL": "60",
-                "Type": "A",
-                "ResourceRecords": [{"Ref": f"rEip{i}"}]
-            }
-        }
+        # rs[f"rDomainName{i}"] = {
+        #     'Type': "AWS::Route53::RecordSet",
+        #     'Properties': {
+        #         'HostedZoneName': {"Ref": "pDomain"},
+        #         'Name': {"Fn::Sub": f"pnode-{i}.${{pSubdomain}}.${{pDomain}}"},
+        #         "TTL": "60",
+        #         "Type": "A",
+        #         "ResourceRecords": [{"Ref": f"rEip{i}"}]
+        #     }
+        # }
 
     outs['oPublicIps'] = {
         'Value': {'Fn::Join': [',', [{'Ref': f'rEip{i}'} for i in range(n_nodes)]]}
@@ -48,9 +48,9 @@ def macro(event, context, **kwargs):
         'Value': {'Fn::Join': [',', [{'Fn::GetAtt': f'rEip{i}.AllocationId'} for i in range(n_nodes)]]}
     }
 
-    outs['oDomainNames'] = {
-        'Value': {'Fn::Join': [',', [{'Ref': f'rDomainName{i}'} for i in range(n_nodes)]]}
-    }
+    # outs['oDomainNames'] = {
+    #     'Value': {'Fn::Join': [',', [{'Ref': f'rDomainName{i}'} for i in range(n_nodes)]]}
+    # }
 
     frag['Outputs'] = outs
     fragment_txt = json.dumps(event['fragment'], indent=4, separators=(',', ': '), sort_keys=True)

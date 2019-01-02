@@ -1,0 +1,88 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  pChainSpecUrl:
+    Type: String
+  pEC2InstanceType:
+    Type: String
+  pSecurityGroup:
+    Type: String
+  pAmiId:
+    Type: String
+  pNodeNumber:
+    Type: String
+  pNamePrefix:
+    Type: String
+  pAvailabilityZone:
+    Type: String
+  pDomain:
+    Type: String
+  pSubdomain:
+    Type: String
+  pEipAddress:
+    Type: String
+
+Resources:
+
+  rNodeStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./sv-ec2-node.yaml
+      Parameters:
+        pEC2InstanceType: !Ref pEC2InstanceType
+        pSecurityGroup: !Ref pSecurityGroup
+        pAmiId: !Ref pAmiId
+        pNodeNumber: !Ref pNodeNumber
+        pNamePrefix: !Ref pNamePrefix
+        pAvailabilityZone: !Ref pAvailabilityZone
+        pDomain: !Ref pDomain
+        pSubdomain: !Ref pSubdomain
+        pNodeType: 'public'
+        pVolumeSize: 150
+        pEipAddress: !Ref pEipAddress
+        pLaunchScript: !Sub |
+          sudo yum install jq
+          sudo amazon-linux-extras install docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          mkdir -p /parityVolume/chaindata
+          mkdir -p /parityVolume/static
+          wget ${pChainSpecUrl} -O /parityVolume/static/chainspec.json
+          # jq for pretty print
+          cat /parityVolume/static/chainspec.json | jq
+          # since users ec2-user and parity share UIDs...
+          chown -R ec2-user:ec2-user /parityVolume
+          set +x
+          ENODE_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-enodekey-public-${pNodeNumber} --region ${AWS::Region} --with-decryption --query Parameter.Value --output text)
+          set -x
+          ls -R /parityVolume
+          docker run --name parity -d --network=host --restart=always \
+            --mount type=bind,source=/parityVolume/static,target=/static \
+            --mount type=bind,source=/parityVolume/chaindata,target=/home/parity/.local/share/io.parity.ethereum \
+            -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+              --chain=/static/chainspec.json \
+              --logging=info \
+              --jsonrpc-apis=web3,net,eth \
+              --jsonrpc-interface=all \
+              --jsonrpc-cors=all \
+              --ws-apis=web3,net,eth \
+              --ws-interface=all \
+              --ws-origins=all \
+              --pruning=archive \
+              --node-key=$ENODE_SECRET
+          docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs
+          docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
+          docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "GET", "POST"]'
+          docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '["true"]'
+          docker exec ipfsd ipfs shutdown
+          docker start ipfsd
+          res=$?
+          docker ps
+          docker logs parity
+          [[ "$res" == "0" ]]
+
+Outputs:
+  oPublicIp:
+    Value: !GetAtt rNodeStack.Outputs.oPublicIp
+  oDomainName:
+    Value: !GetAtt rNodeStack.Outputs.oDomainName

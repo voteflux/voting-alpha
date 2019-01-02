@@ -74,7 +74,7 @@ Resources:
         Timeout: PT5M
     Properties:
       ImageId: !Ref pAmiId
-      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+      KeyName: !Sub sv-${pNamePrefix}-node-ec2-ssh-key
       InstanceType: !Ref pEC2InstanceType
       SecurityGroups: [ !Ref pSecurityGroup ]
       AvailabilityZone: !Ref pAvailabilityZone
@@ -176,7 +176,7 @@ Resources:
 #      InstanceType: !Ref pEC2InstanceType
 #      InstanceMonitoring: false
 #      IamInstanceProfile: !GetAtt rInstanceProfile.Arn
-#      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+#      KeyName: !Sub sv-${pNamePrefix}-node-ec2-ssh-key
 #      UserData:
 #        Fn::Base64: !Sub |
 #          #!/bin/bash -x
