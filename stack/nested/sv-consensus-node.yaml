@@ -1,0 +1,215 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  pChainSpecUrl:
+    Type: String
+  pEC2InstanceType:
+    Type: String
+  pSecurityGroup:
+    Type: String
+  pAmiId:
+    Type: String
+  pNodeNumber:
+    Type: String
+  pNamePrefix:
+    Type: String
+  pAvailabilityZone:
+    Type: String
+  pSignerAddress:
+    Type: String
+  pDomain:
+    Type: String
+  pSubdomain:
+    Type: String
+
+Resources:
+
+  rRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/ec2-role/"
+      RoleName: !Sub sv-${pNamePrefix}-consensusnode-${pNodeNumber}-role
+
+  rPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub sv-${pNamePrefix}-consensusnode-${pNodeNumber}-policy
+      Roles:
+        - !Ref rRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: ssm:GetParameter
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber}"
+
+  rInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn:
+      - rPolicy
+    Properties:
+      Roles: [ !Ref rRole ]
+      InstanceProfileName: !Sub sv-${pNamePrefix}-consensusnode-${pNodeNumber}-instanceprofile
+
+  rDomainName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Ref pDomain
+      Name: !Sub cnode-${pNodeNumber}.${pSubdomain}.${pDomain}
+      TTL: 60
+      Type: A
+      ResourceRecords:
+        - !GetAtt rEc2Instance.PublicIp
+
+  rEc2Instance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Properties:
+      ImageId: !Ref pAmiId
+      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+      InstanceType: !Ref pEC2InstanceType
+      SecurityGroups: [ !Ref pSecurityGroup ]
+      AvailabilityZone: !Ref pAvailabilityZone
+      InstanceInitiatedShutdownBehavior: stop
+      IamInstanceProfile: !Ref rInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: "50"
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub sv-${pNamePrefix}-consensus-${pNodeNumber}
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash -x
+          yum install -y aws-cfn-bootstrap
+          sudo amazon-linux-extras install docker
+          sudo service docker start
+          sudo systemctl enable docker
+          sudo usermod -a -G docker ec2-user
+          mkdir -p /parityVolume/chaindata
+          mkdir -p /parityVolume/static
+          wget ${pChainSpecUrl} -O /parityVolume/static/chainspec.json
+          # since users ec2-user and parity share UIDs...
+          chown -R ec2-user:ec2-user /parityVolume
+          docker run --name parity-tmp -d --network=host \
+            --mount type=bind,source=/parityVolume/static,target=/static \
+            --mount type=bind,source=/parityVolume/chaindata,target=/home/parity/.local/share/io.parity.ethereum \
+            -p 8545:8545 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+              --chain=/static/chainspec.json \
+              --logging=info \
+              --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
+              --jsonrpc-interface=local
+          docker logs parity-tmp
+          set +x
+          ACCOUNT_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber} --region ${AWS::Region} --with-decryption --query Parameter.Value --output text)
+          curl --data "{\"method\":\"parity_newAccountFromSecret\",\"params\":[\"$ACCOUNT_SECRET\",\"password\"],\"id\":1,\"jsonrpc\":\"2.0\"}" -H "Content-Type: application/json" -X POST localhost:8545
+          set -x
+          docker stop parity-tmp
+          docker rm parity-tmp
+          ls -R /parityVolume
+          echo "password" > /parityVolume/static/password.txt
+          docker run --name parity -d --network=host --restart=always \
+            --mount type=bind,source=/parityVolume/static,target=/static \
+            --mount type=bind,source=/parityVolume/chaindata,target=/home/parity/.local/share/io.parity.ethereum \
+            -p 8545:8545 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+              --chain=/static/chainspec.json \
+              --logging=info \
+              --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
+              --jsonrpc-interface=local \
+              --reseal-on-txs=all \
+              --engine-signer=${pSignerAddress} --password=/static/password.txt \
+              --reseal-min-period=2000 --reseal-max-period=6000
+          res=$?
+          echo $res
+
+          # temp: always launch this so we can get things working / debug
+          res=0
+          /opt/aws/bin/cfn-signal -e $res \
+            --stack ${AWS::StackName} \
+            --resource rEc2Instance \
+            --region ${AWS::Region}
+          docker ps
+          docker logs parity
+          echo -e "\n\n---- done ----\n\n"
+
+#  rAutoScalingGroup:
+#    Type: AWS::AutoScaling::AutoScalingGroup
+#    Properties:
+#      AutoScalingGroupName: !Sub "sv-${pNamePrefix}-autoscaling-consensus-${pNodeNumber}"
+#      AvailabilityZones:
+#        - !Ref pAvailabilityZone
+#      LaunchConfigurationName:
+#        Ref: rNodeLaunchConfig
+#      MinSize: '1'
+#      MaxSize: '1'
+#      DesiredCapacity: '1'
+#      Tags:
+#        - Key: Name
+#          Value: !Sub sv-{pNamePrefix}-consensus-${pNodeNumber}
+#          PropagateAtLaunch: 'true'
+#        - Key: NodeNumber
+#          Value: !Ref pNodeNumber
+#          PropagateAtLaunch: 'true'
+#    CreationPolicy:
+#      ResourceSignal:
+#        Timeout: PT10M
+#    UpdatePolicy:
+#      AutoScalingReplacingUpdate:
+#        WillReplace: 'true'
+#
+#  rNodeLaunchConfig:
+#    Type: AWS::AutoScaling::LaunchConfiguration
+#    Properties:
+#      ImageId: !Ref pAmiId
+#      SecurityGroups:
+#        - !Ref pSecurityGroup
+#      InstanceType: !Ref pEC2InstanceType
+#      InstanceMonitoring: false
+#      IamInstanceProfile: !GetAtt rInstanceProfile.Arn
+#      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+#      UserData:
+#        Fn::Base64: !Sub |
+#          #!/bin/bash -x
+#          yum install -y aws-cfn-bootstrap
+#          sudo amazon-linux-extras install docker
+#          sudo service docker start
+#          sudo usermod -a -G docker ec2-user
+#          mkdir /parityVolume
+#          wget ${pChainSpecUrl} -O /parityVolume/chainspec.json
+#          docker run --name parity -d --network=host --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 30303:30303 -p 30303:30303/udp parity/parity:stable \
+#            --chain=/static/chainspec.json \
+#            --logging=info \
+#            --jsonrpc-apis=web3,net,eth,admin,parity_accounts,parity \
+#            --jsonrpc-interface=local \
+#            --reseal-on-txs=all \
+#            --engine-signer=${pSignerAddress}
+#          res=$?
+#          echo $res
+#          set +x
+#          ACCOUNT_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber} --query Parameter.Value --output text)
+#          curl --data "{\"method\":\"parity_newAccountFromSecret\",\"params\":[\"$ACCOUNT_SECRET\",\"\"],\"id\":1,\"jsonrpc\":\"2.0\"}" -H "Content-Type: application/json" -X POST localhost:8545
+#          set -x
+#
+#          # temp: always launch this so we can get things working / debug
+#          res=0
+#          /opt/aws/bin/cfn-signal -e $res \
+#            --stack ${AWS::StackName} \
+#            --resource rAutoScalingGroup \
+#            --region ${AWS::Region}
+#          docker ps
+
+Outputs:
+  oPublicIP:
+    Value: !GetAtt rEc2Instance.PublicIp
+  oDomainName:
+    Value: !Ref rDomainName

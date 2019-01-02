@@ -1,0 +1,117 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  pChainSpecUrl:
+    Type: String
+  pEC2InstanceType:
+    Type: String
+  pSecurityGroup:
+    Type: String
+  pAmiId:
+    Type: String
+  pNodeNumber:
+    Type: String
+  pNamePrefix:
+    Type: String
+  pAvailabilityZone:
+    Type: String
+  pSignerAddress:
+    Type: String
+  pDomain:
+    Type: String
+  pSubdomain:
+    Type: String
+  pNodeType:
+    Type: String
+    AllowedValues: ['consensus', 'public']
+  pEipIpAddress:
+    Type: String
+    Default: ''
+  pLaunchScript:
+    Type: String
+
+Conditions:
+  cAssociateEip: !Not [ !Equals [ !Ref pEipIpAddress, '' ] ]
+
+Resources:
+
+  rEipAssociation:
+    Condition: cAssociateEip
+    Type: AWS::EC2::EIPAssociation
+    Properties:
+      EIP: !Ref pEipIpAddress
+      InstanceId: !Ref rEc2Instance
+
+  rRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+            Action: sts:AssumeRole
+      Path: "/ec2-role/"
+      RoleName: !Sub sv-${pNamePrefix}-${pNodeType}node-${pNodeNumber}-role
+
+  rPolicy:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      ManagedPolicyName: !Sub sv-${pNamePrefix}-${pNodeType}node-${pNodeNumber}-policy
+      Roles:
+        - !Ref rRole
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: ssm:GetParameter
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-${pNodeType}-${pNodeNumber}"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-enodekey-${pNodeType}-${pNodeNumber}"
+
+  rInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    DependsOn:
+      - rPolicy
+    Properties:
+      Roles: [ !Ref rRole ]
+      InstanceProfileName: !Sub sv-${pNamePrefix}-${pNodeType}node-${pNodeNumber}-instanceprofile
+
+  rDomainName:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Ref pDomain
+      Name: !Sub cnode-${pNodeNumber}.${pSubdomain}.${pDomain}
+      TTL: 60
+      Type: A
+      ResourceRecords:
+        - !GetAtt rEc2Instance.PublicIp
+
+  rEc2Instance:
+    Type: AWS::EC2::Instance
+    CreationPolicy:
+      ResourceSignal:
+        Timeout: PT5M
+    Properties:
+      ImageId: !Ref pAmiId
+      KeyName: !Sub ${pNamePrefix}-sv-node-ec2-ssh-key
+      InstanceType: !Ref pEC2InstanceType
+      SecurityGroups: [ !Ref pSecurityGroup ]
+      AvailabilityZone: !Ref pAvailabilityZone
+      InstanceInitiatedShutdownBehavior: stop
+      IamInstanceProfile: !Ref rInstanceProfile
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: "50"
+            DeleteOnTermination: true
+      Tags:
+        - Key: Name
+          Value: !Sub sv-${pNamePrefix}-${pNodeType}-${pNodeNumber}
+      UserData:
+        Fn::Base64: !Ref pLaunchScript
+
+Outputs:
+  oPublicIP:
+    Value: !GetAtt rEc2Instance.PublicIp
+  oDomainName:
+    Value: !Ref rDomainName

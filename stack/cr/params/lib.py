@@ -6,6 +6,7 @@ import string
 import time
 import urllib
 import hashlib
+from ecdsa import SigningKey, SECP256k1
 
 import boto3
 
@@ -71,6 +72,10 @@ def gen_ssm_nodekey_consensus(NamePrefix, i):
     return "sv-{}-nodekey-consensus-{}".format(NamePrefix, i)
 
 
+def gen_ssm_enodekey_public(NamePrefix, i):
+    return "sv-{}-enodekey-public-{}".format(NamePrefix, i)
+
+
 def gen_ssm_nodekey_service(NamePrefix, eth_service):
     return "sv-{}-nodekey-service-{}".format(NamePrefix, eth_service)
 
@@ -83,6 +88,10 @@ def gen_ssm_service_pks(NamePrefix):
     return 'sv-{}-param-service-pks'.format(NamePrefix)
 
 
+def gen_ssm_enode_pks(NamePrefix):
+    return 'sv-{}-param-enode-pks'.format(NamePrefix)
+
+
 def gen_ssm_networkid(NamePrefix):
     return 'sv-{}-param-networkid'.format(NamePrefix)
 
@@ -91,13 +100,13 @@ def gen_ssm_eth_stats_secret(NamePrefix):
     return 'sv-{}-param-ethstatssecret'.format(NamePrefix)
 
 
-def create_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list):
+def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (list, list, list):
     _e = get_some_entropy()
 
-    def gen_next_key():
+    def gen_next_key(hex_prefix="0x"):
         nonlocal _e
         _h = _hash(_e)
-        _privkey = '0x' + binascii.hexlify(_h[:32]).decode()
+        _privkey = hex_prefix + binascii.hexlify(_h[:32]).decode()
         _e = _h[32:]
         assert len(_e) >= 32
         pk = priv_to_addr(_privkey)
@@ -106,6 +115,7 @@ def create_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list
     keys = []
     poa_pks = []
     service_pks = []
+    enode_pks = []
     for i in range(int(NConsensusNodes)):  # max nConsensusNodes
         (_privkey, pk) = gen_next_key()
         keys.append({'Name': gen_ssm_nodekey_consensus(NamePrefix, i),
@@ -120,7 +130,15 @@ def create_node_keys(NConsensusNodes, NamePrefix, **kwargs) -> (list, list, list
                      'Value': _privkey, 'Type': 'SecureString'})
         service_pks.append(pk)
 
-    return keys, poa_pks, service_pks
+    for i in range(int(NPublicNodes)):
+        (_privkey, _) = gen_next_key(hex_prefix='')
+        pk = SigningKey.from_string(bytes.fromhex(_privkey), curve=SECP256k1).get_verifying_key().to_string().hex()
+        keys.append({'Name': gen_ssm_enodekey_public(NamePrefix, i),
+                     'Description': "ENODE Private key for public node #{} (not address)".format(i),
+                     'Value': _privkey, 'Type': 'SecureString'})
+        enode_pks.append(pk)
+
+    return {'ssm_keys': keys, 'poa_pks': poa_pks, 'service_pks': service_pks, 'enode_pks': enode_pks}
 
 
 def save_node_keys(keys: list, NamePrefix, **kwargs):
@@ -160,14 +178,31 @@ def save_service_pks(service_pks, NamePrefix, **props):
     return {"SavedPoaPks": True}
 
 
-def delete_all_node_keys(NamePrefix, NConsensusNodes, **props):
-    ssm.delete_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))
+def save_enode_pks(enode_pks, NamePrefix, **props):
+    ssm.put_parameter(Name=gen_ssm_enode_pks(NamePrefix),
+                      Description="Public nodes ENODE ids (for chainspec)",
+                      Value=json.dumps(enode_pks),
+                      Type='String')
+    return {"SavedPublicEnodes": True}
+
+
+def delete_all_node_keys(NamePrefix, NConsensusNodes, NPublicNodes, **props):
+    def try_del(name):
+        try:
+            ssm.delete_parameter(Name=name)
+        except Exception as e:
+            if 'ParameterNotFound' not in repr(e):
+                raise e
+
+    try_del(gen_ssm_key_poa_pks(NamePrefix))
     consensus_node_keys = [gen_ssm_nodekey_consensus(NamePrefix, i) for i in range(int(NConsensusNodes))]
-    chunks = chunk(consensus_node_keys, 10)
-    for c in chunks:
-        ssm.delete_parameters(Names=c)
-    ssm.delete_parameter(Name=gen_ssm_service_pks(NamePrefix))
-    ssm.delete_parameters(Names=list([gen_ssm_nodekey_service(NamePrefix, service) for service in SERVICES]))
+    public_enode_keys = [gen_ssm_enodekey_public(NamePrefix, i) for i in range(int(NPublicNodes))]
+    for name in consensus_node_keys + public_enode_keys:
+        try_del(name)
+    try_del(gen_ssm_service_pks(NamePrefix))
+    try_del(gen_ssm_enode_pks(NamePrefix))
+    for n in [gen_ssm_nodekey_service(NamePrefix, service) for service in SERVICES]:
+        try_del(n)
     return {"DeletedAllNodeKeys": True}
 
 
@@ -198,8 +233,10 @@ def del_ssm_networkid_ethstats(NamePrefix, **props):
 def upload_chain_config(NamePrefix, StaticBucketName, **params):
     poa_pks = json.loads(ssm.get_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))['Parameter']['Value'])
     service_pks = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])
-    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, NamePrefix=NamePrefix, **params))
-    ret = {'ChainSpec': chainspec}
+    enode_pks = json.loads(ssm.get_parameter(Name=gen_ssm_enode_pks(NamePrefix))['Parameter']['Value'])
+
+    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, enode_pks, NamePrefix=NamePrefix, **params))
+    ret = {'ChainSpecGenerated': True}
     obj_key = 'chain/chainspec.json'
     s3 = boto3.client('s3')
     put_resp = s3.put_object(Key=obj_key, Body=chainspec, Bucket=StaticBucketName, ACL='public-read')
@@ -207,7 +244,7 @@ def upload_chain_config(NamePrefix, StaticBucketName, **params):
     return ret
 
 
-def gen_chainspec_json(poa_addresses: list, service_addresses: list, **params) -> dict:
+def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: list, pEnodeIps, **params) -> dict:
     """
     :param poa_addresses: list of addresses for the proof of authority nodes
     :param service_addresses: list of addresses for services (i.e the lambdas that do things like onboarding members)
@@ -241,6 +278,8 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, **params) -
 
     accounts = {addr: {"balance": INIT_BAL} for addr in service_addresses}
     accounts.update(builtins)
+
+    enodes = list(["enode://{pk}@{ip}:30303".format(pk=pk, ip=ip) for (pk, ip) in zip(enode_pks, pEnodeIps)])
 
     return {
         "name": "{} PoA Network - Powered by SecureVote and Flux".format(NamePrefix),
@@ -291,6 +330,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, **params) -
             "wasmActivationTransition": 0
         },
         "accounts": accounts,
+        "nodes": enodes
         # "nodes": [
         #     "enode://304c9dbcca45409785539b227f273c3329197c86de6cc8d73252870f91176eb3588db2774fc7db4a6011519faa5fa4f39d63aeb341db672901ebdf3555fda095@13.238.183.223:30303",
         #     "enode://7a75777e450bd552ff55b08746a10873e141ba15984fbd1d89cc132e468d4f9ed5ddf011008fbf39be2e45c03b0930328faa074b6c040d46b1a543a49b47ee06@52.213.81.2:30303",

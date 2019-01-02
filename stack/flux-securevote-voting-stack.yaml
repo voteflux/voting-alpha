@@ -1,4 +1,3 @@
----
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
@@ -39,7 +38,7 @@ Metadata:
       - Label:
           default: Domain Name configuration
         Parameters:
-          - HostedZone
+          - HostedZoneDomain
           - Subdomain
 
       - Label:
@@ -62,8 +61,8 @@ Metadata:
         default: Only required if an SSHKey is not provided. The password with which to encrypt the SSH key before delivery via email.
       EC2InstanceType:
         default: EC2 Instance Type
-      HostedZone:
-        default: The hosted zone to use for domains
+      HostedZoneDomain:
+        default: The root domain name of the hosted zone to use (note, you must include the trailing '.')
       Subdomain:
         default: The subdomain to use under the hosted zone (e.g. app for all domains under *.app.my.tld if my.tld was associated with the hosted zone)
       AdminEmail:
@@ -86,9 +85,9 @@ Parameters:
     Type: String
     Default: ''
 
-  HostedZone:
-    Description: The hosted zone to use for domains
-    Type: AWS::Route53::HostedZone::Id
+  HostedZoneDomain:
+    Description: The hosted zone domain to use for subdomains
+    Type: String
   Subdomain:
     Description: The subdomain to use under the hosted zone (e.g. 'vote' will mean all domains are created under *.vote.my.tld if my.tld corresponds to the above the hosted zone)
     Default: "voting-app"
@@ -177,48 +176,49 @@ Conditions:
       - { Condition: cHasSSHEncPw }
 
 
-Mappings:
-  RegionToResourceRegion:
-    us-east-1:
-      to: us-east-1
-    us-east-2:
-      to: us-east-2
-    us-west-2:
-      to: us-west-2
-    us-west-1:
-      to: us-west-2
-    ca-central-1:
-      to: us-east-1
-    eu-central-1:
-      to: us-east-1
-    eu-west-1:
-      to: us-east-1
-    eu-west-2:
-      to: us-east-1
-    eu-west-3:
-      to: us-east-1
-    ap-northeast-2:
-      to: us-east-1
-    ap-northeast-1:
-      to: us-east-1
-    ap-southeast-2:
-      to: us-east-1
-    ap-southeast-1:
-      to: us-east-1
-    sa-east-1:
-      to: us-east-1
-    ap-south-1:
-      to: us-east-1
 
-  RegionInformationMap:
-    us-east-1:
-      ResourceAccountId: 354658284331
-    us-east-2:
-      ResourceAccountId: 763976151875
-    us-west-2:
-      ResourceAccountId: 712425161857
+
 
 Resources:
+
+  rEipMacro:
+    Type: AWS::CloudFormation::Macro
+    Properties:
+      Name: sv-eips
+      FunctionName: !GetAtt rEipLamdba.Arn
+      LogGroupName: /macro/SvEips
+      LogRoleARN: !GetAtt rMacroExeLogRole.Arn
+
+  rEipLamdba:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'macro-eips.macro'
+      FunctionName: !Sub sv-${NamePrefix}-macro-eips
+      Timeout: 30
+
+  rMacroExeLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub sv-${NamePrefix}-macro-lambda-exe-role
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /macro-role/
+      Policies:
+        - PolicyName: !Sub sv-${NamePrefix}-macro-lambda-exe-policy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action: ['logs:*']
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/macro/*'
+
 
   rStaticBucket:
     Type: AWS::S3::Bucket
@@ -230,6 +230,30 @@ Resources:
           - AllowedMethods: [ 'GET' ]
             AllowedOrigins: [ '*' ]
             MaxAge: 86400
+      WebsiteConfiguration:
+        IndexDocument: index.html
+
+  rStaticBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: '*'
+            Action: s3:GetObject
+            Resource: !Sub "arn:aws:s3:::${rStaticBucket}/*"
+      Bucket: !Ref rStaticBucket
+
+  rStaticBucketDomain:
+    Type: AWS::Route53::RecordSet
+    Properties:
+      HostedZoneName: !Ref HostedZoneDomain
+      Name: !Sub static.${Subdomain}.${HostedZoneDomain}
+      TTL: '60'
+      Type: TXT
+      ResourceRecords:
+        - !Sub '"${rStaticBucket.DomainName}"'
 
   rStaticBucketCleanupCr:
     Type: Custom::StaticBucketCleanup
@@ -282,6 +306,26 @@ Resources:
       AliasName: !Sub alias/${NamePrefix}-general-kms-key
       TargetKeyId: !GetAtt rKms.Arn
 
+  rConsensusSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${NamePrefix}-nodes-consensus-sg
+      GroupDescription: SG for consensus EC2 nodes (Eth)
+#      VpcId: !Ref rVpc
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 30303
+          ToPort: 30303
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: udp
+          FromPort: 30303
+          ToPort: 30303
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp  # todo remove when appropriate
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+
   rPublicSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -327,6 +371,7 @@ Resources:
       SSHEncryptionPassword: !Ref SSHEncryptionPassword
       BlockGasLimit: !Ref BlockGasLimit
       StackTesting: 'true'  # set to '' to disable
+      pEnodeIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
 
   rParamsLambda:
     Type: AWS::Serverless::Function
@@ -381,6 +426,7 @@ Resources:
       ServiceToken: !GetAtt rEthPrivkeysLambda.Arn
       NamePrefix: !Ref NamePrefix
       NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
+      NPublicNodes: !Ref NumberOfEthereumPublicNodes
 
   rEthPrivkeysLambda:
     Type: AWS::Serverless::Function
@@ -400,6 +446,7 @@ Resources:
               Resource:
                 - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
                 - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-consensus-*"
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-enodekey-public-*"
                 - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-service-*"
             - Effect: Allow
               Action:
@@ -407,7 +454,7 @@ Resources:
               Resource: '*'
 
   rNamePrefixStaticCr:
-    Type: Custom::EthPrivkeys
+    Type: Custom::NamePrefixStatic
     Properties:
       ServiceToken: !GetAtt rNamePrefixStaticLambda.Arn
       NamePrefix: !Ref NamePrefix
@@ -506,14 +553,14 @@ Resources:
       DesiredCapacity: !Ref NumberOfEthereumPublicNodes
       Tags:
         - Key: Name
-          Value: !Ref Nonce
-          PropagateAtLaunch: 'true'
+          Value: !Sub sv-${NamePrefix}-public-${Nonce}
+          PropagateAtLaunch: true
     CreationPolicy:
       ResourceSignal:
         Timeout: PT10M
     UpdatePolicy:
       AutoScalingReplacingUpdate:
-        WillReplace: 'true'
+        WillReplace: true
 
   rNodeLaunchConfig:
     Type: AWS::AutoScaling::LaunchConfiguration
@@ -529,10 +576,11 @@ Resources:
       KeyName: !Sub ${NamePrefix}-sv-node-ec2-ssh-key
 #      IamInstanceProfile:
 #        Ref:
-#      BlockDeviceMappings:
-#        - DeviceName: /dev/sda1
-#          Ebs:
-#            VolumeSize: 100
+      BlockDeviceMappings:
+        - DeviceName: "/dev/xvda"
+          Ebs:
+            VolumeSize: 100
+            DeleteOnTermination: true
       UserData:
         Fn::Base64:
           Fn::Join:
@@ -545,13 +593,14 @@ Resources:
                 - "\n"
                 - - "sudo amazon-linux-extras install docker" # Install docker;; previously 'sudo yum install -y docker'
                   - "sudo service docker start" # Start docker
+                  - "sudo systemctl enable docker"
                   - "sudo usermod -a -G docker ec2-user" # Make it so we don't have to sudo for docker
                   # - !Sub "eval `aws ecr get-login --region ${DockerRegion} --no-include-email --registry-ids ${DockerECRAccount}`" # Log in to docker
                   - "mkdir /parityVolume"
                   - !Sub "wget ${rParamsCr.ChainSpecUrl} -O /parityVolume/chainspec.json"
                   - Fn::Join:
                     - " "
-                    - - !Sub "docker run -d --network=host --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
+                    - - "docker run -d --network=host --restart=always --mount type=bind,source=/parityVolume,target=/static -p 8545:8545 -p 8546:8546 -p 30303:30303 -p 30303:30303/udp parity/parity:stable"
                       - "--chain=/static/chainspec.json"
                       - "--logging=info"
                       - "--jsonrpc-apis=web3,net,eth"
@@ -599,6 +648,32 @@ Resources:
             - "docker ps"
             - "\n"
 
+  rConsensusNode0:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./nested/sv-consensus-node.yaml
+      Parameters:
+        pChainSpecUrl: !GetAtt rParamsCr.ChainSpecUrl
+        pEC2InstanceType: !Ref EC2InstanceType
+        pSecurityGroup: !Ref rConsensusSG
+        pAmiId: !Ref pAmiId
+        pNodeNumber: '0'
+        pNamePrefix: !Ref NamePrefix
+        pAvailabilityZone: !Sub ${AWS::Region}a
+        pSignerAddress: !Select [ 0, !GetAtt rEthPrivkeysCr.PoAAddresses ]
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+
+  rPublicNodeEips:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - rEipMacro
+    Properties:
+      TemplateURL: ./nested/sv-public-eips-and-dns.yaml
+      Parameters:
+        pNPublicNodes: !Ref NumberOfEthereumPublicNodes
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
 
 
   # EthereumCommonStack:
@@ -736,6 +811,8 @@ Outputs:
     Value: !GetAtt rParamsCr.NetworkId
   oEc2KeyPairName:
     Value: !GetAtt rParamsCr.KeyPairName
+  oStaticUrl:
+    Value: !Sub "http://static.${Subdomain}.${HostedZoneDomain}"
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:
