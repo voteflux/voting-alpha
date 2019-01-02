@@ -177,45 +177,6 @@ Conditions:
 
 Resources:
 
-  rEipMacro:
-    Type: AWS::CloudFormation::Macro
-    Properties:
-      Name: sv-eips
-      FunctionName: !GetAtt rEipLamdba.Arn
-      LogGroupName: /macro/SvEips
-      LogRoleARN: !GetAtt rMacroExeLogRole.Arn
-
-  rEipLamdba:
-    Type: AWS::Serverless::Function
-    Properties:
-      CodeUri: './cr/params'
-      Runtime: python3.6
-      Handler: 'macro-eips.macro'
-      FunctionName: !Sub sv-${NamePrefix}-macro-eips
-      Timeout: 30
-
-  rMacroExeLogRole:
-    Type: AWS::IAM::Role
-    Properties:
-      RoleName: !Sub sv-${NamePrefix}-macro-lambda-exe-role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: [lambda.amazonaws.com]
-            Action: ['sts:AssumeRole']
-      Path: /macro-role/
-      Policies:
-        - PolicyName: !Sub sv-${NamePrefix}-macro-lambda-exe-policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action: ['logs:*']
-                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/macro/*'
-
-
   rStaticBucket:
     Type: AWS::S3::Bucket
     Properties: 
@@ -644,6 +605,7 @@ Resources:
 #            - "docker ps"
 #            - "\n"
 
+  # todo: macro these out
   rConsensusNode0:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -660,6 +622,7 @@ Resources:
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
 
+  # todo: macro these out
   rPublicNode0:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -678,139 +641,12 @@ Resources:
 
   rPublicNodeEips:
     Type: AWS::CloudFormation::Stack
-    DependsOn:
-      - rEipMacro
     Properties:
-      TemplateURL: ./nested/sv-public-eips-and-dns.yaml
+      TemplateURL: ./nested/sv-public-eips.yaml
       Parameters:
         pNPublicNodes: !Ref NumberOfEthereumPublicNodes
 
 
-  # EthereumCommonStack:
-  #   Type: AWS::CloudFormation::Stack
-  #   Properties:
-  #     TemplateURL: !Sub "${NestedTemplateOrigin}ethereum-common.template.yaml"
-  #     Parameters:
-  #       VPCID:
-  #         Ref: VPCID
-  #       NetworkSubnetIDs:
-  #         Fn::Join:
-  #           - ","
-  #           - Ref: NetworkSubnetIDs
-  #       ALBSubnetIDs:
-  #         Fn::Join:
-  #           - ","
-  #           - Ref: ALBSubnetIDs
-  #       NumberOfEthereumClients:
-  #         Ref: NumberOfEthereumClients
-  #       NumberOfEthereumMiners:
-  #         Ref: NumberOfEthereumMiners
-  #       InitialAccountAddresses:
-  #         Ref: InitialAccountAddresses
-  #       NetworkID:
-  #         Ref: NetworkID
-  #       BlockGasLimit:
-  #         Ref: BlockGasLimit
-  #       InitialBlockGasLimit:
-  #         Ref: InitialBlockGasLimit
-  #       EC2InstanceProfileArn:
-  #         Ref: EC2InstanceProfileArn
-  #       EC2KeyPairName:
-  #         Ref: EC2KeyPairName
-  #       EC2SecurityGroup:
-  #         Ref: EC2SecurityGroup
-  #       ECSRoleForALB:
-  #         Ref: ECSRoleForALB
-  #       NumberOfEC2Instances:
-  #         Ref: NumberOfEC2Instances
-  #       EC2InstanceType:
-  #         Ref: EC2InstanceType
-  #       RootStackName:
-  #         Ref: AWS::StackName
-  #       MinerAccountAddress:
-  #         Ref: MinerAccountAddress
-  #       EthereumNodeLogLevel:
-  #         Ref: EthereumNodeLogLevel
-  #       RunEthExplorer:
-  #         Ref: RunEthExplorer
-  #       RunEthStats:
-  #         Ref: RunEthStats
-  #       EthStatsSecret:
-  #         Ref: EthStatsSecret
-  #       ContainerPlatform:
-  #         Ref: ContainerPlatform
-  #       InitialDifficulty:
-  #         Ref: InitialDifficulty
-  #       InitialAccountBalance:
-  #         Ref: InitialAccountBalance
-  #       GasPriceFloor:
-  #         Ref: GasPriceFloor
-  #       LoadBalancerSecurityGroup:
-  #         Ref: LoadBalancerSecurityGroup
-  #       ClusterName:
-  #         Fn::Sub: "${AWS::StackName}-Ethereum"
-  #       DockerRegion:
-  #         Fn::FindInMap:
-  #           - RegionToResourceRegion
-  #           - Ref: AWS::Region
-  #           - to
-  #       DockerECRAccount:
-  #         Fn::FindInMap:
-  #           - RegionInformationMap
-  #           - Fn::FindInMap:
-  #             - RegionToResourceRegion
-  #             - Ref: AWS::Region
-  #             - to
-  #           - ResourceAccountId
-  #       EthereumDockerImage:
-  #         Fn::Sub:
-  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/client-go:v1"
-  #           - DockerRegion:
-  #               Fn::FindInMap:
-  #                 - RegionToResourceRegion
-  #                 - Ref: AWS::Region
-  #                 - to
-  #             DockerECRAccount:
-  #               Fn::FindInMap:
-  #                 - RegionInformationMap
-  #                 - Fn::FindInMap:
-  #                   - RegionToResourceRegion
-  #                   - Ref: AWS::Region
-  #                   - to
-  #                 - ResourceAccountId
-  #       EthStatsDockerImage:
-  #         Fn::Sub:
-  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/eth-netstats:v1"
-  #           - DockerRegion:
-  #               Fn::FindInMap:
-  #                 - RegionToResourceRegion
-  #                 - Ref: AWS::Region
-  #                 - to
-  #             DockerECRAccount:
-  #               Fn::FindInMap:
-  #                 - RegionInformationMap
-  #                 - Fn::FindInMap:
-  #                   - RegionToResourceRegion
-  #                   - Ref: AWS::Region
-  #                   - to
-  #                 - ResourceAccountId
-  #       EthExplorerDockerImage:
-  #         Fn::Sub:
-  #           - "${DockerECRAccount}.dkr.ecr.${DockerRegion}.amazonaws.com/eth-explorer:v1"
-  #           - DockerRegion:
-  #               Fn::FindInMap:
-  #                 - RegionToResourceRegion
-  #                 - Ref: AWS::Region
-  #                 - to
-  #             DockerECRAccount:
-  #               Fn::FindInMap:
-  #                 - RegionInformationMap
-  #                 - Fn::FindInMap:
-  #                   - RegionToResourceRegion
-  #                   - Ref: AWS::Region
-  #                   - to
-  #                 - ResourceAccountId
-  #       NestedTemplateOrigin: !Ref NestedTemplateOrigin
 
 Outputs:
   oChainSpecUrl:

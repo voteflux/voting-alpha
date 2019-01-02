@@ -1,0 +1,41 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Resources:
+  rEipMacro:
+    Type: AWS::CloudFormation::Macro
+    Properties:
+      Name: sv-eips
+      FunctionName: !GetAtt rEipLamdba.Arn
+      LogGroupName: /macro/SvEips
+      LogRoleARN: !GetAtt rMacroExeLogRole.Arn
+
+  rEipLamdba:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: './cr/params'
+      Runtime: python3.6
+      Handler: 'macro-eips.macro'
+      FunctionName: !Sub sv-macro-eips
+      Timeout: 30
+
+  rMacroExeLogRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub sv-macro-lambda-exe-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: [lambda.amazonaws.com]
+            Action: ['sts:AssumeRole']
+      Path: /macro-role/
+      Policies:
+        - PolicyName: !Sub sv-macro-lambda-exe-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action: ['logs:*']
+                Resource: !Sub 'arn:aws:logs:${AWS::Region}:${AWS::AccountId}:log-group:/macro/*'

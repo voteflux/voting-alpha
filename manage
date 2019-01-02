@@ -246,6 +246,31 @@ def cmd_stream_cfn(stack_name):
     stream_cfn_events(stack_name)
 
 
+@cli.command(name='deploy-macros')
+@click.argument('stack-name', default='sv-macros')
+def deploy_macros(stack_name):
+    TMP_TMPL_FILE = "tmp-macros.yaml"
+
+    pkg_cmd = f"aws cloudformation package --template-file ./stack/sv-macros.yaml --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
+    print("Package:", pkg_cmd)
+    must_run(pkg_cmd, silent=True)
+
+    obj_key = "sv-macros.yaml"
+    s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(s3)
+    s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+
+    params_aws = []
+
+    if stack_exists(stack_name):
+        sid = update_stack(stack_name, obj_url, params_aws)
+    else:
+        sid = create_stack(stack_name, obj_url, params_aws)
+
+    stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+
+
 @cli.command(name='test-deploy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=False)
@@ -264,10 +289,8 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
 
     TMP_TMPL_FILE = 'tmp-stack.yaml'
     obj_key = "templates/" + STACK_TMPL.split('/')[-1]
-    must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}".format(STACK_TMPL,
-                                                                                                             S3_DEV_BUCKET,
-                                                                                                             TMP_TMPL_FILE),
-             silent=True)
+    must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
+             .format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
     s3 = boto3.client('s3')
     s3_tfer = S3Transfer(s3)
     s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
