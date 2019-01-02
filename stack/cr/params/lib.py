@@ -285,7 +285,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: 
     accounts = {addr: {"balance": INIT_BAL} for addr in service_addresses}
     accounts.update(builtins)
 
-    enodes = list(["enode://{pk}@{ip}:30303".format(pk=pk, ip=ip) for (pk, ip) in zip(enode_pks, pEnodeIps)])
+    enodes = list(["enode://{pk}@{ip}:30303".format(pk=pk, ip=ip) for (pk, ip) in zip(enode_pks, pEnodeIps.split(','))])
 
     return {
         "name": "{} PoA Network - Powered by SecureVote and Flux".format(NamePrefix),
