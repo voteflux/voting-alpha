@@ -12,11 +12,31 @@ import boto3
 
 from eth_account.account import Account
 
-from utils import *
+# from utils import *
 
-SERVICES = ["publish", "members", "castvote"]
+
+SVC_CHAINCODE = "publish"
+SVC_MEMBERS = "members"
+SVC_CASTVOTE = "castvote"
+SERVICES = [SVC_CHAINCODE, SVC_MEMBERS, SVC_CASTVOTE]
 
 ssm = boto3.client('ssm')
+
+
+class Timer:
+    def __init__(self, name=''):
+        self.name = name
+
+    def __enter__(self):
+        self.start = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        self.end = time.time()
+        self.interval = self.end - self.start
+        if self.name:
+            logging.info(f'Timed {self.name} to take {self.interval} seconds.')
+
 
 
 def http_get(url: str) -> bytes:
@@ -68,6 +88,34 @@ def priv_to_addr(_priv):
     return Account.privateKeyToAccount(_priv).address
 
 
+def get_ssm_param_no_enc(name):
+    try:
+        return ssm.get_parameter(Name=name)['Parameter']['Value']
+    except Exception as e:
+        logging.warning(f"Error during get_parameter: {repr(e)}")
+        return None
+
+
+def get_ssm_param_with_enc(name):
+    try:
+        return ssm.get_parameter(Name=name, WithDecryption=True)['Parameter']['Value']
+    except Exception as e:
+        logging.warning(f"Error during get_parameter: {repr(e)}")
+        return None
+
+
+def put_param_no_enc(name, value, description=''):
+    return ssm.put_parameter(Name=name, Value=value, Type="String", Description=description)
+
+
+def put_param_with_enc(name, value, description='', overwrite=False):
+    return ssm.put_parameter(Name=name, Value=value, Type="SecureString", Description=description, Overwrite=overwrite)
+
+
+def ssm_param_exists(name):
+    return get_ssm_param_no_enc(name) is not None
+
+
 def gen_ssm_nodekey_consensus(NamePrefix, i):
     return "sv-{}-nodekey-consensus-{}".format(NamePrefix, i)
 
@@ -98,6 +146,10 @@ def gen_ssm_networkid(NamePrefix):
 
 def gen_ssm_eth_stats_secret(NamePrefix):
     return 'sv-{}-param-ethstatssecret'.format(NamePrefix)
+
+
+def gen_ssm_sc_addr(name_prefix, sc_name):
+    return f"sv-{name_prefix}-param-sc-addr-{sc_name}"
 
 
 def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (list, list, list):
@@ -321,6 +373,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: 
         },
         "params": {
             "networkID": hex_network_id,
+            "chainID": hex_network_id,
             "maximumExtraDataSize": "0x20",
             "minGasLimit": "0x3fffff",
             "gasLimitBoundDivisor": "0x400",

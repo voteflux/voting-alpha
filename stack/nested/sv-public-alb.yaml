@@ -1,0 +1,51 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Parameters:
+  pPublicIps:
+    Type: String
+  pNamePrefix:
+    Type: String
+
+
+Resources:
+
+  rPublicSG:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub ${NamePrefix}-public-alb-sg
+      GroupDescription: SG for ALB for publicly accessible EC2 nodes (Eth + IPFS)
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 8545
+          ToPort: 8546
+          CidrIp: 0.0.0.0/0
+
+
+  rLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - LoadBalancerAttributes
+      Name: !Sub sv-${pNamePrefix}-public-alb
+      Scheme: internet-facing
+      SecurityGroups:
+        - !Ref rPublicSG
+      Type: application
+
+  rWebsocketTargetGroup:
+    Type: AWS::ElasticLoadBalancingV2::TargetGroup
+    Properties:
+      Name: !Sub sv-${pNamePrefix}-public-targetgroup
+      Port: 8546
+      Protocol: http
+      Targets:
+        # per target!
+        - AvailabilityZone: !Sub ${AWS::Region}a
+          Id: sldfjksldkfj
+          Port: 8546
+      TargetType: ip
+      VpcId: sdfjkjsdf
+
+Outputs:
+  oWebsocketTargetGroup:
+    Value: !Ref rWebsocketTargetGroup

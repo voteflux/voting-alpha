@@ -75,7 +75,8 @@ Resources:
               --jsonrpc-interface=local \
               --reseal-on-txs=all \
               --engine-signer=${pSignerAddress} --password=/static/password.txt \
-              --reseal-min-period=2000 --reseal-max-period=6000
+              --reseal-min-period=2000 --reseal-max-period=6000 \
+              --min-gas-price=1
           res=$?
           docker ps
           docker logs parity

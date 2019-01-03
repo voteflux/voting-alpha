@@ -1,0 +1,63 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  pNamePrefix:
+    Type: String
+#    Default: 'testnetalpha'
+#  pDomain:
+#    Type: String
+#  pSubdomain:
+#    Type: String
+  pPublicNodeDomain:
+    Type: String
+#    Default: 'public-node-0.testnet-alpha.flux.vote.'
+  pOffset:
+    Type: String
+    Default: ''
+
+
+Resources:
+  rChaincodeCr:
+    Type: Custom::Chaincode
+    Properties:
+      ServiceToken: !GetAtt rChaincodeLambda.Arn
+      pNamePrefix: !Ref pNamePrefix
+#      pDomain: !Ref pDomain
+#      pSubdomain: !Ref pSubdomain
+      pPublicNodeDomain: !Ref pPublicNodeDomain
+      pSmartContracts:
+        - Type: local
+          Name: membership
+          Inputs: []
+#        - Type: remote
+#          Name: somethingelse
+#          URL: https://s3.ap-southeast-2.amazonaws.com/testnetalpha-static-resources/smart-contracts/somecode.bytecode
+#          Inputs: []
+        - Type: call
+          Name: membership
+          Method: 'someMethod'
+          Inputs: ['input1']
+
+  rChaincodeLambda:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: '../cr/chaincode'
+      Runtime: python3.6
+      Handler: 'chaincode.chaincode_handler'
+      FunctionName: !Sub ${pNamePrefix}${pOffset}-chaincode-cr
+      Timeout: 300
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action: ssm:GetParameter
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-service-publish"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-*"
+          - Effect: Allow
+            Action: ssm:PutParameter
+            Resource:
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-addr-*"
+Outputs:
+  oMembershipAddr:
+    Value: !GetAtt rChaincodeCr.MembershipAddr

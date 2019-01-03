@@ -3,3 +3,4 @@ node_modules
 .vscode
 deps
 __pycache__
+tmp*

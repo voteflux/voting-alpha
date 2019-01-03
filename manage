@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-
+import hashlib
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
@@ -22,15 +22,17 @@ STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 TEST_STACK_NAME = "testnet-alpha-stack"
 TEST_SUBDOMAIN = "testnet-alpha"
 TEST_NAMEPREFIX = "testnetalpha"
+OFFSET = ""
 
 MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
 
 
 def set_offset(offset):
-    global TEST_STACK_NAME, TEST_NAMEPREFIX, TEST_SUBDOMAIN
-    TEST_STACK_NAME += '-{}'.format(offset)
-    TEST_SUBDOMAIN += '-{}'.format(offset)
-    TEST_NAMEPREFIX += '-{}'.format(offset)
+    global TEST_STACK_NAME, TEST_NAMEPREFIX, TEST_SUBDOMAIN, OFFSET
+    TEST_STACK_NAME += f'-{offset}'
+    TEST_SUBDOMAIN += f'-{offset}'
+    TEST_NAMEPREFIX += f'-{offset}'
+    OFFSET = offset
 
 
 cfn = boto3.client('cloudformation')
@@ -43,7 +45,13 @@ def must_run(cmd, silent=False):
     if silent:
         out = subprocess.DEVNULL
         err = out
-    exit_code = subprocess.check_call(cmd.split(' '), stdout=out, stderr=err)
+    if type(cmd) is list:
+        to_run = cmd
+    elif type(cmd) is str:
+        to_run = cmd.split(' ')
+    else:
+        raise Exception("must_run only accepts str or list")
+    exit_code = subprocess.check_call(to_run, stdout=out, stderr=err)
     logging.debug("Command `%s` exited w code %d" % (cmd, exit_code))
     if exit_code != 0:
         logging.error("Failed to run %s" % cmd)
@@ -133,6 +141,13 @@ def update_stack(stack_name, obj_url, params_aws):
     return r['StackId']
 
 
+def create_or_update_stack(stack_name, obj_url, params):
+    if stack_exists(stack_name):
+        return update_stack(stack_name, obj_url, params)
+    else:
+        return create_stack(stack_name, obj_url, params)
+
+
 def get_failed_msgs(stack_name):
     evts_after = get_stack(stack_name).get('LastUpdatedTime', None)
 
@@ -188,7 +203,7 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                         l_num += 1
                         del resources[r]
                 text_win.refresh()
-                time.sleep(0.75)
+                time.sleep(2)
         finally:
             curses.nocbreak()
             stdscr.keypad(False)
@@ -198,6 +213,16 @@ def stream_cfn_events(stack_name, heading_prefix=None):
     curses.wrapper(_run)
 
 
+def s3_upload(filepath, obj_key, public_read=True):
+    s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(s3)
+    extra_args = {'ACL': 'public-read'} if public_read else {}
+    s3_tfer.upload_file(filepath, S3_DEV_BUCKET, obj_key, extra_args=extra_args)
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+    return obj_url
+
+
+
 @click.group()
 @click.option("--debug/--no-debug", default=False)
 @click.option("--offset", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
@@ -205,7 +230,6 @@ def cli(debug, offset):
     if debug:
         logging.basicConfig(level=logging.DEBUG)
         logging.debug("Debug mode enabled")
-    offset = offset if len(offset) > 0 else None
     if offset:
         set_offset(offset)
 
@@ -244,6 +268,54 @@ def cmd_stream_cfn(stack_name):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
     stream_cfn_events(stack_name)
+
+
+@cli.command(name='upload-func')
+@click.argument('func-path')
+@click.argument('func-name')
+def upload_func(func_path, func_name):
+    if func_path[-3:] != ".py":
+        logging.error("Must target a python file to upload (whole dir gets uploaded tho)")
+        sys.exit(1)
+    root_dir = os.path.dirname(os.path.realpath(__file__))
+    dir_path = os.path.dirname(func_path)
+    os.chdir(dir_path)
+    if os.path.exists(f"{root_dir}/tmp-func.zip"):
+        must_run(f'rm -v {root_dir}/tmp-func.zip', silent=True)
+    must_run(f'zip -r {root_dir}/tmp-func.zip ./', silent=True)
+    os.chdir(root_dir)
+    with open('./tmp-func.zip', 'rb') as f:
+        zip_bytes = f.read()
+    # obj_key = f'./tmp-func-{int(time.time())}.zip'
+    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+
+    awslam = boto3.client('lambda')
+    awslam.update_function_code(FunctionName=func_name, ZipFile=zip_bytes, Publish=True)
+
+    print_output(f"Updated function {func_name}")
+
+
+
+
+@cli.command(name='deploy-ns')
+@click.argument('stack-path')
+@click.argument('stack-name')
+@click.option('--no-params', default=False, type=click.BOOL, is_flag=True, help="Do not send pOffset as a parameter.")
+def deploy_nestedstack(stack_path, stack_name, no_params):
+    TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
+    pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
+    must_run(pkg_cmd, silent=True)
+
+    filename = os.path.basename(stack_path)
+    obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
+    obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
+
+    params = [] if no_params else [{'ParameterKey': 'pOffset', 'ParameterValue': OFFSET}]
+    sid = create_or_update_stack(stack_name, obj_url, params)
+    logging.info(f"Stack SID: {sid}")
+
+    stream_cfn_events(stack_name, heading_prefix="DEPLOY-NS-DEV")
+    print_output(f"Stack deploy/create/update run for {stack_name} w sid: {sid}")
 
 
 @cli.command(name='deploy-macros')
@@ -309,6 +381,7 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
         'pDeployMacros': 'false',
+        'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
     params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]

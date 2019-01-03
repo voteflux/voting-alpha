@@ -11,6 +11,10 @@ Description: >
   It also includes the Ethereum Network Stats and Ethereum Explorer services.
 
   Based on a heavily modified version of Amazon's blockchain templates.
+
+  NOTE: Only some parts of this project are licenced under Apache 2.0 (inherited from AWS's blockchain templates
+  and johnbrandborg/aws-acm-autovalidate). Please see individual files for more.
+
   License: Apache 2.0 (Please do not remove) Apr 4, 2018 (bt-f5kb4kx9v)
 
 
@@ -162,6 +166,11 @@ Parameters:
   pDeployMacros:
     Type: String
     AllowedValues: ['true', 'false']
+    Default: 'true'
+#  pDeployAcmAutovalidate:
+#    Type: String
+#    AllowedValues: ['true', 'false']
+#    Default: 'true'
 
 
 Conditions:
@@ -175,6 +184,8 @@ Conditions:
       - { Condition: cHasSSHEncPw }
   cDeployMacros:
     !Equals [ !Ref pDeployMacros, 'true' ]
+#  cDeployAcmAutovalidate:
+#    !Equals [ !Ref pDeployAcmAutovalidate, 'true' ]
 
 
 Resources:
@@ -184,6 +195,21 @@ Resources:
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: ./sv-macros.yaml
+
+  rAcmAutovalidateStack:
+#    Condition: cDeployAcmAutovalidate
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./nested/acm-autovalidate/template.yaml
+
+  rCertificate:
+    Type: Custom::AcmAutovalidateCertificate
+    Properties:
+#      ServiceToken: !If [ cDeployAcmAutovalidate, !GetAtt rAcmAutovalidateStack.Outputs.FunctionArn, !ImportValue acm-autovalidate-function-arn ]
+      ServiceToken: !GetAtt rAcmAutovalidateStack.Outputs.FunctionArn
+      domainname: !Join [ '.', [ !Ref Subdomain, !Ref HostedZoneDomain ] ]
+      additionalnames:
+        - !Join [ '.', [ "*", !Ref Subdomain, !Ref HostedZoneDomain ] ]
 
   rStaticBucket:
     Type: AWS::S3::Bucket
@@ -526,6 +552,28 @@ Resources:
         pNPublicNodes: !Ref NumberOfEthereumPublicNodes
         pDependsShim: !If [ cDeployMacros, !Ref rMacroStack, !Ref rStaticBucket ]
 
+  rChaincodeStack:
+    Type: AWS::CloudFormation::Stack
+    DependsOn:
+      - rPublicNode0
+      - rConsensusNode0
+    Properties:
+      TemplateURL: ./nested/sv-chaincode-loader.yaml
+      Parameters:
+#        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
+        pNamePrefix: !Ref NamePrefix
+#        pDomain: !Ref HostedZoneDomain
+#        pSubdomain: !Ref Subdomain
+        pPublicNodeDomain: !GetAtt rPublicNode0.Outputs.oDomainName
+
+#  rPublicLoadBalancer:
+#    Type: AWS::CloudFormation::Stack
+#    Properties:
+#      TemplateURL: ./nested/sv-public-alb.yaml
+#      Parameters:
+#        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
+#        pNamePrefix: !Ref NamePrefix
+
 Outputs:
   oChainSpecUrl:
     Value: !GetAtt rParamsCr.ChainSpecUrl
@@ -535,6 +583,8 @@ Outputs:
     Value: !GetAtt rParamsCr.KeyPairName
   oStaticDomain:
     Value: !Sub "static.${Subdomain}.${HostedZoneDomain}"
+  oCertificateArn:
+    Value: !GetAtt rCertificate.Arn
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

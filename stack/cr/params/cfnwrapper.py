@@ -15,7 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
 print("PYTHONPATH:", os.environ['PYTHONPATH'])
 
 LOGGER = logging.getLogger()
-LOGGER.setLevel(logging.DEBUG)
+LOGGER.setLevel(logging.INFO)
 
 
 class CfnStatus(Enum):
@@ -42,31 +42,40 @@ def wrap_macro(_handler):
     """wrap a macro handler (lambda)"""
     def inner(event, context):
         # Setup alarm for remaining runtime minus a second
-        signal.alarm((context.get_remaining_time_in_millis() // 1000) - 1)
-        try:
-            LOGGER.info('REQUEST RECEIVED:\n %s', event)
-            LOGGER.info('REQUEST RECEIVED:\n %s', context)
-            resp: CrResponse = _handler(event, context, **event['templateParameterValues'])
-            if type(resp) != CrResponse:
-                raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
-            if not resp.is_macro:
-                raise Exception("macro handlers must return a CrResponse with fragment!")
-            return {
-                "requestId": event['requestId'],
-                "status": resp.status.value,
-                "fragment": resp.fragment
-            }
-        except Exception as e:
-            traceback.print_exc()
-            tb_str = traceback.format_exc()
-            LOGGER.info('FAILED!')
-            LOGGER.info("Exception: %s", repr(e))
-            LOGGER.error(tb_str)
-            return {
-                "requestId": event['requestId'],
-                "status": CfnStatus.FAILED.value,
-                "errorMessage": "Exception: {}\n\nTraceback:\n{}".format(repr(e), tb_str)
-            }
+        ms_remaining = context.get_remaining_time_in_millis()
+        timeout_in_s = max((ms_remaining // 1000) - 1, 15)
+        LOGGER.debug(f'ms remaining: {ms_remaining}')
+        LOGGER.debug(f'timing out in seconds: {timeout_in_s} (min 15s)')
+        signal.alarm(timeout_in_s)
+        def run():
+            try:
+                LOGGER.info('REQUEST RECEIVED:\n %s', event)
+                LOGGER.info('REQUEST RECEIVED:\n %s', context)
+                resp: CrResponse = _handler(event, context, **event['templateParameterValues'])
+                if type(resp) != CrResponse:
+                    raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
+                if not resp.is_macro:
+                    raise Exception("macro handlers must return a CrResponse with fragment!")
+                return {
+                    "requestId": event['requestId'],
+                    "status": resp.status.value,
+                    "fragment": resp.fragment
+                }
+            except Exception as e:
+                traceback.print_exc()
+                tb_str = traceback.format_exc()
+                LOGGER.info('FAILED!')
+                LOGGER.info("Exception: %s", repr(e))
+                LOGGER.error(tb_str)
+                return {
+                    "requestId": event['requestId'],
+                    "status": CfnStatus.FAILED.value,
+                    "errorMessage": "Exception: {}\n\nTraceback:\n{}".format(repr(e), tb_str)
+                }
+        resp = run()
+        logging.info(f"RESPONSE: {resp}")
+        signal.alarm(0)
+        return resp
     return inner
 
 
@@ -126,7 +135,11 @@ def send_response(event, context, cfn_resp: CrResponse):
         "Data": response_data
     }
     if 'Traceback' in response_data:
-        resp_dict['Reason'] += "\n\nTraceback:\n" + response_data['Traceback']
+        tb_lines = response_data['Traceback'].split('\n')
+        nl = '\n'
+        resp_dict['Reason'] += f"\nTB:\n{nl.join(tb_lines[1:3])}\n...\n{nl.join(tb_lines[-2:])}"
+        del response_data['Traceback']
+    resp_dict['Reason'] = resp_dict['Reason'][:600]
     response_body = json.dumps(resp_dict).encode()
 
     LOGGER.info('ResponseURL: %s', event['ResponseURL'])
