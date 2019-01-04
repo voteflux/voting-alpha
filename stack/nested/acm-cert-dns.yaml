@@ -33,7 +33,7 @@ Conditions:
 
 
 Resources:
-  
+
   rACMApproverFunction:
     Type: AWS::Serverless::Function
     Properties:

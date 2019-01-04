@@ -37,6 +37,10 @@ class Timer:
         if self.name:
             logging.info(f'Timed {self.name} to take {self.interval} seconds.')
 
+    @property
+    def curr_interval(self):
+        return time.time() - self.start
+
 
 
 def http_get(url: str) -> bytes:

@@ -29,15 +29,12 @@ Resources:
       pSmartContracts:
         - Type: local
           Name: membership
-          Inputs: []
-#        - Type: remote
-#          Name: somethingelse
-#          URL: https://s3.ap-southeast-2.amazonaws.com/testnetalpha-static-resources/smart-contracts/somecode.bytecode
-#          Inputs: []
-        - Type: call
-          Name: membership
-          Method: 'someMethod'
-          Inputs: ['input1']
+        - Type: local
+          Name: bblib-v7
+        - Type: local
+          Name: bbfarm
+          Libraries:
+            __./contracts/BBLib.v7.sol:BBLibV7______: bblib-v7
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
