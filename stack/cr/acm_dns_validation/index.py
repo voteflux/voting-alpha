@@ -48,12 +48,12 @@ def cfn_response(url, body):
 def acm_certificate(event, context):
     LOG.info(f"Request Event: {event}")
     if event['RequestType'] in ['Create', 'Update']:
-        cfn_response(event['ResponseURL'], _create_acm_certificate(event))
+        cfn_response(event['ResponseURL'], _create_acm_certificate(event, context))
     else:
         cfn_response(event['ResponseURL'], _delete_acm_certificate(event))
 
 
-def _create_acm_certificate(event):
+def _create_acm_certificate(event, ctx):
     acm = boto3.client('acm')
     ret = dict()
     ret['StackId'] = event['StackId']
@@ -128,12 +128,13 @@ def _create_acm_certificate(event):
             ChangeBatch={'Comment': 'Auth', 'Changes': r53_c}
         )
         LOG.info("r53 response: %s" % response)
-        LOG.info("monitoring cert validation up to 250s")
 
         cert_done = False
         cert_status = "PENDING_VALIDATION"
+        seconds_remaining = (ctx.get_remaining_time_in_millis() // 1000) - 10
+        LOG.info(f"monitoring cert validation up to {seconds_remaining}s")
         with Timer("certificate DNS validation period") as t:
-            while t.curr_interval < 250 and not cert_done:  # seconds
+            while t.curr_interval < seconds_remaining and not cert_done:  # seconds
                 try:
                     cert = acm.describe_certificate(CertificateArn=cert_arn)['Certificate']
                     cert_status = cert['DomainValidationOptions'][0]['ValidationStatus']
