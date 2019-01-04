@@ -222,6 +222,9 @@ def s3_upload(filepath, obj_key, public_read=True):
     return obj_url
 
 
+def dict_to_cfn_params(params):
+    return [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
+
 
 @click.group()
 @click.option("--debug/--no-debug", default=False)
@@ -300,8 +303,8 @@ def upload_func(func_path, func_name):
 @cli.command(name='deploy-ns')
 @click.argument('stack-path')
 @click.argument('stack-name')
-@click.option('--no-params', default=False, type=click.BOOL, is_flag=True, help="Do not send pOffset as a parameter.")
-def deploy_nestedstack(stack_path, stack_name, no_params):
+@click.option('--params', default='', help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
+def deploy_nestedstack(stack_path, stack_name, params):
     TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
     pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
     must_run(pkg_cmd, silent=True)
@@ -310,8 +313,8 @@ def deploy_nestedstack(stack_path, stack_name, no_params):
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
     obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
 
-    params = [] if no_params else [{'ParameterKey': 'pOffset', 'ParameterValue': OFFSET}]
-    sid = create_or_update_stack(stack_name, obj_url, params)
+    cfn_params = dict_to_cfn_params(json.loads(params) if params else {'pOffset': OFFSET})
+    sid = create_or_update_stack(stack_name, obj_url, cfn_params)
     logging.info(f"Stack SID: {sid}")
 
     stream_cfn_events(stack_name, heading_prefix="DEPLOY-NS-DEV")
@@ -381,10 +384,10 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
         'pDeployMacros': 'false',
-        'pDeployAcmAutovalidate': 'false',
+        # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
-    params_aws = [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
+    params_aws = dict_to_cfn_params(params)
 
     cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(
         obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))

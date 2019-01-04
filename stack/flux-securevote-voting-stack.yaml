@@ -196,20 +196,15 @@ Resources:
     Properties:
       TemplateURL: ./sv-macros.yaml
 
-  rAcmAutovalidateStack:
-#    Condition: cDeployAcmAutovalidate
+  rAcmCertStack:
     Type: AWS::CloudFormation::Stack
     Properties:
-      TemplateURL: ./nested/acm-autovalidate/template.yaml
-
-  rCertificate:
-    Type: Custom::AcmAutovalidateCertificate
-    Properties:
-#      ServiceToken: !If [ cDeployAcmAutovalidate, !GetAtt rAcmAutovalidateStack.Outputs.FunctionArn, !ImportValue acm-autovalidate-function-arn ]
-      ServiceToken: !GetAtt rAcmAutovalidateStack.Outputs.FunctionArn
-      domainname: !Join [ '.', [ !Ref Subdomain, !Ref HostedZoneDomain ] ]
-      additionalnames:
-        - !Join [ '.', [ "*", !Ref Subdomain, !Ref HostedZoneDomain ] ]
+      TemplateURL: ./nested/acm-cert-dns.yaml
+      Parameters:
+        pNamePrefix: !Ref NamePrefix
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+        pWildcard: 'true'
 
   rStaticBucket:
     Type: AWS::S3::Bucket
@@ -584,7 +579,7 @@ Outputs:
   oStaticDomain:
     Value: !Sub "static.${Subdomain}.${HostedZoneDomain}"
   oCertificateArn:
-    Value: !GetAtt rCertificate.Arn
+    Value: !GetAtt rAcmCertStack.Outputs.oCertificateArn
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

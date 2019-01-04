@@ -1,0 +1,108 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Description: |
+  Cloudformation Custom Resource for ACM certs using Route53 approval
+
+  Source: https://www.reddit.com/r/aws/comments/8g1vhq/cloudformation_create_and_verify_acm_certificate/dy8vdz9/
+
+  Parameter pSubdomain and pDomain are optional.
+
+Parameters:
+  pNamePrefix:
+    Default: "standalone"
+    Type: String
+  pSubdomain:
+    Type: String
+    Default: ''
+  pDomain:
+    Type: String
+    Default: ''
+  pWildcard:
+    Type: String
+    AllowedValues: ['true','false']
+    Default: 'false'
+
+
+Conditions:
+  cCreateCert:
+    Fn::Not:
+    - Fn::And:
+      - !Equals [ !Ref pSubdomain, '' ]
+      - !Equals [ !Ref pDomain, '' ]
+
+
+Resources:
+#  ACMApproverRole:
+#    Type: "AWS::IAM::Role"
+#    Properties:
+#      AssumeRolePolicyDocument:
+#        Version: "2012-10-17"
+#        Statement:
+#          - Effect: Allow
+#            Principal:
+#              Service: lambda.amazonaws.com
+#            Action: "sts:AssumeRole"
+#      Path: "/"
+#      Policies:
+#        -
+#          PolicyName: "ACMCFNLambdaPolicy"
+#          PolicyDocument:
+#            Version: "2012-10-17"
+#            Statement:
+#              -
+#                Effect: "Allow"
+#                Action:
+#                  - "logs:CreateLogGroup"
+#                  - "logs:CreateLogStream"
+#                  - "logs:PutLogEvents"
+#                Resource: "*"
+#              -
+#                Effect: "Allow"
+#                Action:
+#                  - "acm:*"
+#                  - "route53:*"
+#                Resource: "*"
+
+  rACMApproverFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ../cr/acm_dns_validation
+      Description: Cloudformation Custom Resource for ACM certs using Route53 approval
+      FunctionName: !Sub ${pNamePrefix}-acm-creation-and-dns-lambda
+      Handler: index.acm_certificate
+      MemorySize: 128
+      Runtime: python3.6
+      Timeout: 300
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Effect: "Allow"
+              Action:
+                - "logs:CreateLogGroup"
+                - "logs:CreateLogStream"
+                - "logs:PutLogEvents"
+              Resource: "*"
+            - Effect: "Allow"
+              Action:
+                - "acm:*"
+                - "route53:*"
+              Resource: "*"
+
+  rCertificate:
+    Type: 'Custom::ACMCertificate'
+    Version: '1.0'
+    Condition: cCreateCert
+    Properties:
+      ServiceToken: !GetAtt rACMApproverFunction.Arn
+      pSubdomain: !Ref pSubdomain
+      pDomain: !Ref pDomain
+      pWildcard: !Ref pWildcard
+
+Outputs:
+  oFunctionArn:
+    Value: !GetAtt rACMApproverFunction.Arn
+    Description: "Use this function as the ServiceToken for a custom resource with parameters (pSubdomain, pDomain, and pWildcard) to create a certificate"
+  oCertificateArn:
+    Value: !If [ cCreateCert, !GetAtt rCertificate.CertificateArn, 'no-certificate-created' ]
+    Description: "ARN of the cert if it was created."
