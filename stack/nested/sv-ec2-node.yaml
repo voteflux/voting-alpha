@@ -109,7 +109,12 @@ Resources:
       UserData:
         Fn::Base64: !Sub |
           #!/bin/bash -x
-          yum install -y aws-cfn-bootstrap
+          echo "${pNodeType}-node-${pNodeNumber}.${pSubdomain}.${pDomain}" > /etc/hostname
+          yum install -y aws-cfn-bootstrap htop tree zsh
+          echo "/usr/bin/zsh; exit" >> /home/ec2-user/.bashrc
+          touch /home/ec2-user/.zshrc
+          chown ec2-user:ec2-user /home/ec2-user/.zshrc
+          yum update -y
           ${pLaunchScript}
           res=$?
           echo $res

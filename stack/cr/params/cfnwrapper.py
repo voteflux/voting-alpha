@@ -9,14 +9,19 @@ from enum import Enum
 
 import os, sys
 
-os.environ['PYTHONPATH'] = os.environ['PYTHONPATH'] + (':' if os.environ['PYTHONPATH'] else '') + os.path.dirname(
-    os.path.realpath(__file__)) + '/deps'
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
-print("PYTHONPATH:", os.environ['PYTHONPATH'])
+# os.environ['PYTHONPATH'] = os.environ.get('PYTHONPATH', '') + (':' if 'PYTHONPATH' in os.environ else '') + os.path.dirname(
+#     os.path.realpath(__file__)) + '/deps'
+# sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
+# print("PYTHONPATH:", os.environ['PYTHONPATH'])
 
-LOGGER = logging.getLogger()
+main_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, main_dir)
+sys.path.insert(0, os.path.join(main_dir, 'deps'))
+
+LOGGER = logging.getLogger("CfnWrap")
 LOGGER.setLevel(logging.INFO)
 
+LOGGER.info(f"Path: {sys.path}")
 
 class CfnStatus(Enum):
     SUCCESS = "SUCCESS"

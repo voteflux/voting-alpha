@@ -28,6 +28,8 @@ class Timer:
         self.name = name
 
     def __enter__(self):
+        if self.name:
+            logging.info(f"Timer starting for {self.name}")
         self.start = time.time()
         return self
 
@@ -41,6 +43,10 @@ class Timer:
     def curr_interval(self):
         return time.time() - self.start
 
+
+def update_dict(_dict, _new_fields):
+    _dict.update(_new_fields)
+    return _dict
 
 
 def http_get(url: str) -> bytes:
@@ -108,8 +114,12 @@ def get_ssm_param_with_enc(name):
         return None
 
 
-def put_param_no_enc(name, value, description=''):
+def put_param_no_enc(name, value, description='', dry_run=False):
+    if dry_run:
+        logging.debug(f'[dry_run] put_param: {name}, value: {value}')
+        return {}
     return ssm.put_parameter(Name=name, Value=value, Type="String", Description=description)
+
 
 
 def put_param_with_enc(name, value, description='', overwrite=False):

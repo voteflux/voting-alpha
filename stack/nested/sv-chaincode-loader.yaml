@@ -18,23 +18,24 @@ Parameters:
 
 
 Resources:
-  rChaincodeCr:
-    Type: Custom::Chaincode
-    Properties:
-      ServiceToken: !GetAtt rChaincodeLambda.Arn
-      pNamePrefix: !Ref pNamePrefix
-#      pDomain: !Ref pDomain
-#      pSubdomain: !Ref pSubdomain
-      pPublicNodeDomain: !Ref pPublicNodeDomain
-      pSmartContracts:
-        - Type: local
-          Name: membership
-        - Type: local
-          Name: bblib-v7
-        - Type: local
-          Name: bbfarm
-          Libraries:
-            __./contracts/BBLib.v7.sol:BBLibV7______: bblib-v7
+#  rChaincodeCr:
+#    Type: Custom::Chaincode
+#    Properties:
+#      ServiceToken: !GetAtt rChaincodeLambda.Arn
+#      pNamePrefix: !Ref pNamePrefix
+##      pDomain: !Ref pDomain
+##      pSubdomain: !Ref pSubdomain
+#      pPublicNodeDomain: !Ref pPublicNodeDomain
+#      pSmartContracts: []
+##        - Type: deploy
+##          Name: membership
+##        - Type: deploy
+##          Name: bblib-v7
+##        - Type: deploy
+##          Name: bbfarm
+##          Libraries:
+##            __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
+##            some-nonsense-lib: a-nonsense-value
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
@@ -55,6 +56,6 @@ Resources:
             Action: ssm:PutParameter
             Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-addr-*"
-Outputs:
-  oMembershipAddr:
-    Value: !GetAtt rChaincodeCr.MembershipAddr
+#Outputs:
+#  oMembershipAddr:
+#    Value: !GetAtt rChaincodeCr.MembershipAddr
