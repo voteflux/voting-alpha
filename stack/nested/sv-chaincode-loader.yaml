@@ -18,24 +18,26 @@ Parameters:
 
 
 Resources:
-#  rChaincodeCr:
-#    Type: Custom::Chaincode
-#    Properties:
-#      ServiceToken: !GetAtt rChaincodeLambda.Arn
-#      pNamePrefix: !Ref pNamePrefix
-##      pDomain: !Ref pDomain
-##      pSubdomain: !Ref pSubdomain
-#      pPublicNodeDomain: !Ref pPublicNodeDomain
-#      pSmartContracts: []
-##        - Type: deploy
-##          Name: membership
-##        - Type: deploy
-##          Name: bblib-v7
-##        - Type: deploy
-##          Name: bbfarm
-##          Libraries:
-##            __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
-##            some-nonsense-lib: a-nonsense-value
+  rChaincodeCr:
+    Type: Custom::Chaincode
+    Properties:
+      ServiceToken: !GetAtt rChaincodeLambda.Arn
+      pNamePrefix: !Ref pNamePrefix
+#      pDomain: !Ref pDomain
+#      pSubdomain: !Ref pSubdomain
+      pPublicNodeDomain: !Ref pPublicNodeDomain
+      pSmartContracts:
+        - Type: deploy
+          Name: membership
+#        - Type: deploy
+#          Name: membership
+#        - Type: deploy
+#          Name: bblib-v7
+#        - Type: deploy
+#          Name: bbfarm
+#          Libraries:
+#            __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
+#            some-nonsense-lib: a-nonsense-value
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
@@ -53,9 +55,15 @@ Resources:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-service-publish"
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-*"
           - Effect: Allow
-            Action: ssm:PutParameter
+            Action:
+              - ssm:PutParameter
+              - ssm:DeleteParameter
             Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-addr-*"
+          - Effect: Allow
+            Action: ssm:GetParameters
+            Resources: 
+              - '*'
 #Outputs:
 #  oMembershipAddr:
 #    Value: !GetAtt rChaincodeCr.MembershipAddr
