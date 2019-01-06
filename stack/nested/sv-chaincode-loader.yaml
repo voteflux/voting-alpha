@@ -41,7 +41,7 @@ Resources:
         - Type: deploy
           Name: sv-payments
           Inputs:
-            - %self
+            - '%self'
         - Type: deploy
           Name: sv-comm-auction
         - Type: deploy
@@ -49,7 +49,7 @@ Resources:
           Inputs:
             - $sv-backend
             - $sv-payments
-            - %addr-zero
+            - '%addr-zero'
             - $bbfarm
             - $sv-comm-auction
 
