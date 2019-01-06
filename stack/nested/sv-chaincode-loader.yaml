@@ -40,7 +40,8 @@ Resources:
           Name: sv-backend
         - Type: deploy
           Name: sv-payments
-          Inputs: [ '%self' ]
+          Inputs:
+            - %self
         - Type: deploy
           Name: sv-comm-auction
         - Type: deploy
