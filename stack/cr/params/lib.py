@@ -6,14 +6,17 @@ import string
 import time
 import urllib
 import hashlib
+from datetime import datetime
+from typing import List, NamedTuple
 from ecdsa import SigningKey, SECP256k1
 
 import boto3
 
 from eth_account.account import Account
 
-# from utils import *
-
+SsmParam = NamedTuple('SsmParam',
+                      [('Name', str), ('Type', str), ('KeyId', str), ('LastModifiedDate', datetime),
+                       ('Description', str), ('Version', int)])
 
 SVC_CHAINCODE = "publish"
 SVC_MEMBERS = "members"
@@ -121,7 +124,6 @@ def put_param_no_enc(name, value, description='', dry_run=False):
     return ssm.put_parameter(Name=name, Value=value, Type="String", Description=description)
 
 
-
 def put_param_with_enc(name, value, description='', overwrite=False):
     return ssm.put_parameter(Name=name, Value=value, Type="SecureString", Description=description, Overwrite=overwrite)
 
@@ -164,6 +166,20 @@ def gen_ssm_eth_stats_secret(NamePrefix):
 
 def gen_ssm_sc_addr(name_prefix, sc_name):
     return f"sv-{name_prefix}-param-sc-addr-{sc_name}"
+
+
+def list_ssm_params_starting_with(*args, next_token='', max_results=50) -> List[SsmParam]:
+    filters = [{'Key': 'Name', 'Option': 'BeginsWith', 'Values': args}]
+    res = ssm.describe_parameters(ParameterFilters=filters, MaxResults=max_results,
+                                  NextToken=next_token)
+    params = res['Parameters']
+    if len(params) >= max_results:
+        params += list_ssm_params_starting_with(*args, next_token=res['NextToken'], max_results=max_results)
+    return params
+
+
+def del_ssm_param(name):
+    return ssm.delete_parameter(Name=name)
 
 
 def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (list, list, list):
@@ -214,13 +230,8 @@ def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (li
 
 
 def save_node_keys(keys: list, NamePrefix, **kwargs):
-    existing_ssm = ssm.describe_parameters(ParameterFilters=[
-        {'Key': 'Name', 'Option': 'BeginsWith',
-         'Values': [
-             "sv-{}-nodekey-consensus".format(NamePrefix),
-             "sv-{}-param-poa-pk".format(NamePrefix)
-         ]}
-    ], MaxResults=50)['Parameters']
+    existing_ssm = list_ssm_params_starting_with("sv-{}-nodekey-consensus".format(NamePrefix),
+                                                 "sv-{}-param-poa-pk".format(NamePrefix))
     existing_ssm_names = {p['Name'] for p in existing_ssm}
     logging.info('existing_ssm_names: %s', existing_ssm_names)
     skipped_params = []

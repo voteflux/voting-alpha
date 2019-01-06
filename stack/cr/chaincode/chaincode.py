@@ -8,6 +8,7 @@ from cfnwrapper import *
 from eth_utils import remove_0x_prefix
 from toolz.functoolz import curry, pipe
 from web3 import Web3
+from web3.datastructures import AttributeDict
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
 import boto3
@@ -15,7 +16,7 @@ from typing import List, Dict, Iterable, Callable, Union, TypeVar
 
 from lib import gen_ssm_nodekey_service, SVC_CHAINCODE, gen_ssm_networkid, gen_ssm_sc_addr, \
     get_ssm_param_no_enc, get_ssm_param_with_enc, put_param_no_enc, put_param_with_enc, ssm_param_exists, \
-    Timer, update_dict
+    Timer, update_dict, list_ssm_params_starting_with, del_ssm_param
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("chaincode")
@@ -23,7 +24,6 @@ log.setLevel(logging.INFO)
 log.info("Chaincode logger initialized.")
 
 ssm = boto3.client('ssm')
-
 
 Acc = TypeVar('Acc')
 T = TypeVar('T')
@@ -34,12 +34,13 @@ class ResolveVarValError(Exception):
 
 
 class Contract:
-    def __init__(self, name, bytecode, ssm_param_name, addr=None, gas_used=None):
+    def __init__(self, name, bytecode, ssm_param_name, addr=None, gas_used=None, cached=False):
         self.name = name
         self.bytecode = bytecode
         self.ssm_param_name = ssm_param_name
         self.addr = addr
         self.gas_used = gas_used
+        self.cached = cached
 
     def init_args(self):
         # matches function signature of __init__
@@ -94,40 +95,36 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
     log.info(f"[deploy_contract]: processing {init_contract.name}")
     c_out = Contract.from_contract(init_contract)
 
-    if not dry_run and ssm_param_exists(c_out.ssm_param_name):
-        c_out.set_addr(get_ssm_param_no_enc(c_out.ssm_param_name))
-        log.info(f"[deploy_contract] Found cached address for {c_out.name}: {c_out.addr}")
+    max_gas = int(w3.eth.getBlock('latest').gasLimit * 0.9 // 1)
+    unsigned_tx = {
+        'to': '',
+        'value': 0,
+        'gas': max_gas,
+        'gasPrice': 1,
+        'nonce': nonce,
+        'chainId': chainid,
+        'data': c_out.bytecode
+    }
+    # log.info(f"Signing transaction: {update_dict(dict(unsigned_tx), {'data': f'<Data, len: {len(c_out.bytecode)}>'})}")
+    signed_tx = acct.signTransaction(unsigned_tx)
 
-    else:
-        max_gas = int(w3.eth.getBlock('latest').gasLimit * 0.9 // 1)
-        unsigned_tx = {
-            'to': '',
-            'value': 0,
-            'gas': max_gas,
-            'gasPrice': 1,
-            'nonce': nonce,
-            'chainId': chainid,
-            'data': c_out.bytecode
-        }
-        # log.info(f"Signing transaction: {update_dict(dict(unsigned_tx), {'data': f'<Data, len: {len(c_out.bytecode)}>'})}")
-        signed_tx = acct.signTransaction(unsigned_tx)
+    MAX_SEC = 120
+    with Timer(f"Send+Confirm contract: {c_out.name}") as t:
+        tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+        log.info(f"Sent transaction; txid: {tx_id.hex()}")
+        while not is_tx_confirmed(w3, tx_id) and t.curr_interval < MAX_SEC:
+            time.sleep(0.05)
 
-        MAX_SEC = 120
-        with Timer(f"Send+Confirm contract: {c_out.name}") as t:
-            tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
-            log.info(f"Sent transaction; txid: {tx_id.hex()}")
-            while not is_tx_confirmed(w3, tx_id) and t.curr_interval < MAX_SEC:
-                time.sleep(0.05)
+    tx_r = w3.eth.getTransactionReceipt(tx_id)
+    if tx_r is None:
+        raise Exception(f"Contract took longer than {MAX_SEC}s to confirm!")
 
-        tx_r = w3.eth.getTransactionReceipt(tx_id)
-        if tx_r is None:
-            raise Exception(f"Contract took longer than {MAX_SEC}s to confirm!")
+    c_out.set_addr(tx_r.contractAddress)
+    c_out.set_gas_used(tx_r.gasUsed)
 
-        c_out.set_addr(tx_r.contractAddress)
-        c_out.set_gas_used(tx_r.gasUsed)
+    put_param_no_enc(c_out.ssm_param_name, c_out.addr, description=f"Address for contract {c_out.name}",
+                     dry_run=dry_run)
 
-        put_param_no_enc(c_out.ssm_param_name, c_out.addr, description=f"Address for contract {c_out.name}",
-                         dry_run=dry_run)
     return c_out
 
 
@@ -141,9 +138,13 @@ def get_bytecode(filepath) -> str:
     return bc
 
 
+def _varval_is_addr_pointer(varval: str) -> bool:
+    return varval[0] == "$"
+
+
 def resolve_var_val(prev_outs: Dict[str, Contract], var_val):
     try:
-        if var_val[0] == '$':  # SC addr
+        if _varval_is_addr_pointer(var_val):  # SC addr
             return prev_outs[var_val[1:]].addr
         return var_val
     except Exception as e:
@@ -172,31 +173,52 @@ def process_bytecode(raw_bc: str, prev_outs, inputs, func_name=None, libs=dict()
 
 
 def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
-    def do_fold(prev_outputs, next):
+    def do_fold(prev_outputs: Dict[str, Contract], next):
         nonlocal nonce
+
         ret = dict(prev_outputs)
         entry_name = next['Name']
         inputs = next.get('Inputs', [])
         libs = next.get('Libraries', {})
+        ssm_name = gen_ssm_sc_addr(name_prefix, entry_name)
 
-        if next['Type'] == 'deploy':
-            if 'URL' in next:
-                # remote
-                raise Exception('remote deploys not yet supported')
+        def relies_only_on_cached():
+            for i in inputs:
+                val = i['Value']
+                if _varval_is_addr_pointer(val) and not prev_outputs[val[1:]].cached:
+                    return False
+            return True
+
+        def deploy(_prevs, _next):
+            nonlocal nonce
+            if not dry_run and ssm_param_exists(ssm_name) and relies_only_on_cached():
+                # we don't want to deploy
+                log.info("Skipping deploy of {entry_name} as it is cached and does not rely on other cached contracts.")
+                ret[entry_name] = Contract(entry_name, '', ssm_name, addr=get_ssm_param_no_enc(ssm_name), cached=True)
             else:
-                # local deploy
-                raw_bc = get_bytecode(f"{entry_name}.bytecode")
-            bc = process_bytecode(raw_bc, prev_outputs, inputs, libs=libs)
-            log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
-            c_done = deploy_contract(w3, acct, chainid, nonce,
-                                     Contract(entry_name, bc, gen_ssm_sc_addr(name_prefix, entry_name)),
-                                     dry_run=dry_run)
-            nonce += 1
-            ret[entry_name] = c_done
-        else:
-            raise Exception(f'SC Deploy/Call type {next["Type"]} is not recognised as a valid type of operation.')
+                if 'URL' in _next:
+                    # remote
+                    raise Exception('remote deploys not yet supported')
+                else:
+                    # local deploy
+                    raw_bc = get_bytecode(f"{entry_name}.bytecode")
+                bc = process_bytecode(raw_bc, _prevs, inputs, libs=libs)
+                log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
+                c_done = deploy_contract(w3, acct, chainid, nonce,
+                                         Contract(entry_name, bc, ssm_name),
+                                         dry_run=dry_run)
+                nonce += 1
+                return c_done
 
+        ops = AttributeDict({
+            'deploy': deploy,
+        })
+
+        if next['Type'] not in ops:
+            raise Exception(f'SC Deploy/Call type {next["Type"]} is not recognised as a valid type of operation.')
+        ret[entry_name] = ops[next['Type']](prev_outputs, next)
         return ret
+
     return do_fold
 
 
@@ -225,13 +247,28 @@ def chaincode_handler(event, ctx, **params):
         processed_scs = functools.reduce(mk_contract(name_prefix, w3, acct, chainid, nonce=get_next_nonce(w3, acct)),
                                          smart_contracts_to_deploy, dict())
 
-        data = {f"{c.name.title()}Addr": c.addr for c in processed_scs}
+        data = {f"{c.name.title()}Addr": c.addr for c in processed_scs.values()}
 
         return CrResponse(CfnStatus.SUCCESS, data=data, physical_id=physical_id)
 
     if event['RequestType'] == 'Create':
         return do_idempotent_deploys()
     elif event['RequestType'] == 'Update':
-        return do_idempotent_deploys()
+        cr = do_idempotent_deploys()
+        do_deletes(name_prefix, keep_scs=smart_contracts_to_deploy)
+        return cr
     else:
+        do_deletes(name_prefix, keep_scs=smart_contracts_to_deploy)
         return CrResponse(CfnStatus.SUCCESS, data={}, physical_id=physical_id)
+
+
+def do_deletes(name_prefix, keep_scs: List):
+    keep_names = {op['Name'] for op in keep_scs if 'Name' in op}
+    params = list_ssm_params_starting_with(gen_ssm_sc_addr(name_prefix, ''))
+    for param in params:
+        if param['Name'] in keep_names:
+            log.info(f"Skipping delete of {param['Name']}")
+            continue
+        else:
+            log.info(f"Deleting {param['Name']}")
+            del_ssm_param(param['Name'])
