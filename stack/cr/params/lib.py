@@ -170,8 +170,8 @@ def gen_ssm_sc_addr(name_prefix, sc_name):
 
 def list_ssm_params_starting_with(*args, next_token='', max_results=50) -> List[SsmParam]:
     filters = [{'Key': 'Name', 'Option': 'BeginsWith', 'Values': args}]
-    res = ssm.describe_parameters(ParameterFilters=filters, MaxResults=max_results,
-                                  NextToken=next_token)
+    extra = {} if not next_token else {'NextToken': next_token}
+    res = ssm.describe_parameters(ParameterFilters=filters, MaxResults=max_results, **extra)
     params = res['Parameters']
     if len(params) >= max_results:
         params += list_ssm_params_starting_with(*args, next_token=res['NextToken'], max_results=max_results)

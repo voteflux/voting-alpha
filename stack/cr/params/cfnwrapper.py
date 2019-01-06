@@ -142,7 +142,7 @@ def send_response(event, context, cfn_resp: CrResponse):
     if 'Traceback' in response_data:
         tb_lines = response_data['Traceback'].split('\n')
         nl = '\n'
-        resp_dict['Reason'] += f"\nTB:\n{nl.join(tb_lines[1:3])}\n...\n{nl.join(tb_lines[-2:])}"
+        resp_dict['Reason'] += f"\nTB:\n{nl.join(tb_lines[1:3])}\n...\n{nl.join(tb_lines[-4:])}"
         del response_data['Traceback']
     resp_dict['Reason'] = resp_dict['Reason'][:600]
     response_body = json.dumps(resp_dict).encode()

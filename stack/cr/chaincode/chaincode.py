@@ -2,6 +2,7 @@ import functools
 import itertools
 import time
 import logging
+import os
 
 from cfnwrapper import *
 
@@ -107,6 +108,7 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
     }
     # log.info(f"Signing transaction: {update_dict(dict(unsigned_tx), {'data': f'<Data, len: {len(c_out.bytecode)}>'})}")
     signed_tx = acct.signTransaction(unsigned_tx)
+    log.info(f"Signed transaction: {signed_tx}")
 
     MAX_SEC = 120
     with Timer(f"Send+Confirm contract: {c_out.name}") as t:
@@ -183,8 +185,9 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
         ssm_name = gen_ssm_sc_addr(name_prefix, entry_name)
 
         def relies_only_on_cached():
-            for i in inputs:
+            for i in inputs + [{'Value': l} for l in libs.values() if _varval_is_addr_pointer(l)]:
                 val = i['Value']
+                # note: val[1:] should always exit in prev_outputs at this point
                 if _varval_is_addr_pointer(val) and not prev_outputs[val[1:]].cached:
                     return False
             return True
@@ -193,22 +196,22 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             nonlocal nonce
             if not dry_run and ssm_param_exists(ssm_name) and relies_only_on_cached():
                 # we don't want to deploy
-                log.info("Skipping deploy of {entry_name} as it is cached and does not rely on other cached contracts.")
-                ret[entry_name] = Contract(entry_name, '', ssm_name, addr=get_ssm_param_no_enc(ssm_name), cached=True)
+                log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached contracts.")
+                return Contract(entry_name, '', ssm_name, addr=get_ssm_param_no_enc(ssm_name), cached=True)
+        
+            if 'URL' in _next:
+                # remote
+                raise Exception('remote deploys not yet supported')
             else:
-                if 'URL' in _next:
-                    # remote
-                    raise Exception('remote deploys not yet supported')
-                else:
-                    # local deploy
-                    raw_bc = get_bytecode(f"{entry_name}.bytecode")
-                bc = process_bytecode(raw_bc, _prevs, inputs, libs=libs)
-                log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
-                c_done = deploy_contract(w3, acct, chainid, nonce,
-                                         Contract(entry_name, bc, ssm_name),
-                                         dry_run=dry_run)
-                nonce += 1
-                return c_done
+                # local deploy
+                raw_bc = get_bytecode(f"{entry_name}.bytecode")
+            bc = process_bytecode(raw_bc, _prevs, inputs, libs=libs)
+            log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
+            c_done = deploy_contract(w3, acct, chainid, nonce,
+                                     Contract(entry_name, bc, ssm_name),
+                                     dry_run=dry_run)
+            nonce += 1
+            return c_done
 
         ops = AttributeDict({
             'deploy': deploy,
@@ -247,6 +250,8 @@ def chaincode_handler(event, ctx, **params):
         processed_scs = functools.reduce(mk_contract(name_prefix, w3, acct, chainid, nonce=get_next_nonce(w3, acct)),
                                          smart_contracts_to_deploy, dict())
 
+        log.info(f"processed_scs: {processed_scs}")
+
         data = {f"{c.name.title()}Addr": c.addr for c in processed_scs.values()}
 
         return CrResponse(CfnStatus.SUCCESS, data=data, physical_id=physical_id)
@@ -263,12 +268,12 @@ def chaincode_handler(event, ctx, **params):
 
 
 def do_deletes(name_prefix, keep_scs: List):
-    keep_names = {op['Name'] for op in keep_scs if 'Name' in op}
+    keep_names = {gen_ssm_sc_addr(name_prefix, op['Name']) for op in keep_scs}
     params = list_ssm_params_starting_with(gen_ssm_sc_addr(name_prefix, ''))
     for param in params:
-        if param['Name'] in keep_names:
-            log.info(f"Skipping delete of {param['Name']}")
-            continue
+        ssm_name = param['Name']
+        if ssm_name in keep_names:
+            log.info(f"Skipping delete of {ssm_name}")
         else:
-            log.info(f"Deleting {param['Name']}")
-            del_ssm_param(param['Name'])
+            log.info(f"Deleting {ssm_name}")
+            del_ssm_param(ssm_name)

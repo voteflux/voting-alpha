@@ -257,7 +257,8 @@ def pip_install(target, pkgs):
         print('New requirements:', reqs)
         with open('requirements.txt', 'w+') as f:
             f.write('\n'.join(reqs))
-        _ec = os.system('python3 -m pip install --target=deps -r requirements.txt --no-compile --force-reinstall')
+        _ec = os.system('python3 -m pip install --system --target=deps -r requirements.txt --no-compile --force-reinstall')
+        #_ec = os.system('pip3 install --target=deps -r requirements.txt --no-compile --force-reinstall')
         if _ec != 0:
             raise Exception("Failed to install packages")
         print_output("Installed packages ({}) to {}".format(_pkgs, target))

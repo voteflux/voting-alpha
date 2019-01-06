@@ -10,3 +10,11 @@ Contents:
 ## Website and Livestream
 
 https://flux.vote
+
+## deps
+
+sudo apt install python3 python3-pip zip git build-essential
+
+## manager
+
+run ./manage for cli commands

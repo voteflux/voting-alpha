@@ -29,15 +29,12 @@ Resources:
       pSmartContracts:
         - Type: deploy
           Name: membership
-#        - Type: deploy
-#          Name: membership
-#        - Type: deploy
-#          Name: bblib-v7
-#        - Type: deploy
-#          Name: bbfarm
-#          Libraries:
-#            __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
-#            some-nonsense-lib: a-nonsense-value
+        - Type: deploy
+          Name: bblib-v7
+        - Type: deploy
+          Name: bbfarm
+          Libraries:
+            __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
@@ -61,8 +58,9 @@ Resources:
             Resource:
               - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-addr-*"
           - Effect: Allow
-            Action: ssm:GetParameters
-            Resources: 
+            Action:
+              - ssm:DescribeParameters
+            Resource:
               - '*'
 #Outputs:
 #  oMembershipAddr:
