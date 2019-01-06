@@ -141,29 +141,61 @@ def get_bytecode(filepath) -> str:
 
 
 def _varval_is_addr_pointer(varval: str) -> bool:
-    return varval[0] == "$"
+    return type(varval) is str and varval[0] == "$"
 
 
-def resolve_var_val(prev_outs: Dict[str, Contract], var_val):
+def _varval_is_special_addr(varval: str) -> bool:
+    return type(varval) is str and varval[0] == "%"
+
+
+def _resolve_special_addr(acct, varval):
+    return {
+        'self': acct.address,
+        'addr-zero': '0x0000000000000000000000000000000000000000'
+    }[varval[1:]]
+
+
+def resolve_var_val(acct, prev_outs: Dict[str, Contract], var_val):
     try:
         if _varval_is_addr_pointer(var_val):  # SC addr
             return prev_outs[var_val[1:]].addr
+        if _varval_is_special_addr(var_val):
+            return _resolve_special_addr(acct, var_val)
         return var_val
     except Exception as e:
         raise ResolveVarValError(f"Unknown error occured: {repr(e)}")
 
 
-def process_bytecode(raw_bc: str, prev_outs, inputs, func_name=None, libs=dict()):
+def _get_input_type(_input):
+    return {
+        '$': 'address',
+        '%': 'address',
+        'address': 'address'
+    }[_input[0] if 'Type' not in _input else _input['Type']]
+
+
+def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func_name=None, libs=dict(), sc_op=dict()):
     '''Constructs an ABI on the fly based on Value,Type of inputs, resolves variables (e.g. SC addrs) which need to be,
      and returns encoded+packed arguments as a hex string with no 0x prefix. Also resolves/adds libraries if need be.'''
 
     def sub_libs(_bc, libtuple):
         lib_hole, var_val = libtuple
-        val = resolve_var_val(prev_outs, var_val)
+        val = resolve_var_val(acct, prev_outs, var_val)
         return _bc.replace(lib_hole, remove_0x_prefix(val))
 
     def do_inputs(_bc):
         '''Take inputs and process/pack them and add to end of bytecode.'''
+        if len(inputs) > 0:
+            # construct the abi
+            if func_name is not None:  # is not constructor
+                raise Exception('not yet supported')
+            else:
+                abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(_input)} for (i, _input) in enumerate(inputs)]}
+                abi.update({'payable': 'true'} if 'value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
+                abi.update({"type": "constructor"})
+                tx = {'gasPrice': 1}
+                w3.eth.contract(abi=abi, bytecode=_bc).contract(*map(curry(resolve_var_val)(acct)(prev_outs), inputs)).buildTransaction(tx)
+                return tx.data
         return _bc
 
     do_libs = curry(reduce)(sub_libs)(libs.items())
@@ -198,14 +230,14 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
                 # we don't want to deploy
                 log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached contracts.")
                 return Contract(entry_name, '', ssm_name, addr=get_ssm_param_no_enc(ssm_name), cached=True)
-        
+
             if 'URL' in _next:
                 # remote
                 raise Exception('remote deploys not yet supported')
             else:
                 # local deploy
-                raw_bc = get_bytecode(f"{entry_name}.bytecode")
-            bc = process_bytecode(raw_bc, _prevs, inputs, libs=libs)
+                raw_bc = get_bytecode(f"{entry_name}.bin")
+            bc = process_bytecode(w3, acct, raw_bc, _prevs, inputs, libs=libs, sc_op=_next)
             log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
             c_done = deploy_contract(w3, acct, chainid, nonce,
                                      Contract(entry_name, bc, ssm_name),
