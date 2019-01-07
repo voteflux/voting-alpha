@@ -40,7 +40,7 @@ class Timer:
         self.end = time.time()
         self.interval = self.end - self.start
         if self.name:
-            logging.info(f'Timed {self.name} to take {self.interval} seconds.')
+            logging.info(f'{self.name} :: Duration was {self.interval} seconds.')
 
     @property
     def curr_interval(self):

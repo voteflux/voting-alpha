@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import hashlib
+import platform
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
@@ -35,7 +36,7 @@ def set_offset(offset):
     OFFSET = offset
 
 
-cfn = boto3.client('cloudformation')
+cfn = None
 
 
 def must_run(cmd, silent=False):
@@ -229,23 +230,35 @@ def dict_to_cfn_params(params):
 @click.group()
 @click.option("--debug/--no-debug", default=False)
 @click.option("--offset", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
-def cli(debug, offset):
+@click.option("--region", default="", type=click.STRING, help="specify an AWS region if need be")
+def cli(debug, offset, region):
+    global cfn
     if debug:
         logging.basicConfig(level=logging.DEBUG)
         logging.debug("Debug mode enabled")
     if offset:
         set_offset(offset)
+    cfn_extras = {} if region == '' else {'region_name': region}
+    cfn = boto3.client('cloudformation', **cfn_extras)
+
 
 
 @cli.command(name='pip-install')
 @click.argument('target', nargs=1)
 @click.argument('pkgs', nargs=-1)
-def pip_install(target, pkgs):
+@click.option('--no-system', type=click.BOOL, is_flag=True, default=False, help="do not include --system in pip install args")
+@click.option('--pip-args', type=click.STRING, default='', help="extra args to pass to pip3 install")
+def pip_install(target, pkgs, no_system, pip_args):
     _pkgs = ' '.join(pkgs)
     if os.path.exists(target):
+        # parent_dir = os.path.dirname(target)
+        # target_dir = os.path.basename(target)
+        # os.chdir(parent_dir)
+        # reqs_file = os.path.join(target_dir, 'requirements.txt')
+        reqs_file = 'requirements.txt'
         os.chdir(target)
         try:
-            with open('requirements.txt', 'r') as f:
+            with open(reqs_file, 'r') as f:
                 reqs_old = f.read().split('\n')
         except FileNotFoundError as e:
             reqs_old = []
@@ -255,15 +268,27 @@ def pip_install(target, pkgs):
                 continue
             reqs.append(pkg)
         print('New requirements:', reqs)
-        with open('requirements.txt', 'w+') as f:
+        with open(reqs_file, 'w+') as f:
             f.write('\n'.join(reqs))
-        _ec = os.system('python3 -m pip install --system --target=deps -r requirements.txt --no-compile --force-reinstall')
-        #_ec = os.system('pip3 install --target=deps -r requirements.txt --no-compile --force-reinstall')
+        print('Platform:', platform.system())
+        system = '' if no_system else '--system'
+        _cmd_outer = '{}'
+        if platform.system() == "Darwin":
+            _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
+            system = ''
+        _cmd = _cmd_outer.format(f'pip3 install {system} --target=deps -r {reqs_file} --upgrade --progress-bar emoji {pip_args}')
+        _ec = os.system(_cmd)
+
         if _ec != 0:
             raise Exception("Failed to install packages")
-        print_output("Installed packages ({}) to {}".format(_pkgs, target))
+        print_output(f"Installed packages {pkgs} / {reqs} to {target}")
     else:
         raise Exception("Target of {} is unknown".format(target))
+
+
+@cli.command(name='test-chaincode')
+def test_chaincode():
+    os.system(f'docker run --rm -t -v "$PWD":/var/task lambci/lambda:build-python3.6 bash -c "cd stack/cr/chaincode; python3 test/test_mk_contract.py"')
 
 
 @cli.command(name="stream-cfn")

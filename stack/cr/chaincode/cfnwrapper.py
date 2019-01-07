@@ -1,1 +1,1 @@
-/home/xertrov/src/voting-alpha/stack/cr/params/cfnwrapper.py
+../params/cfnwrapper.py

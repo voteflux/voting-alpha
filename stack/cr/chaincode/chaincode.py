@@ -191,11 +191,13 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func_name=None, l
                 raise Exception('not yet supported')
             else:
                 abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(_input)} for (i, _input) in enumerate(inputs)]}
-                abi.update({'payable': 'true'} if 'value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
+                abi.update({'payable': 'true'} if 'Value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
                 abi.update({"type": "constructor"})
                 tx = {'gasPrice': 1}
-                w3.eth.contract(abi=abi, bytecode=_bc).contract(*map(curry(resolve_var_val)(acct)(prev_outs), inputs)).buildTransaction(tx)
-                return tx.data
+                _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs), [i if type(i) is str else i['Value'] for i in inputs]))
+                log.info(f'inputs to constructor: {_inputs}')
+                tx_res = w3.eth.contract(abi=[abi], bytecode=_bc).constructor(*_inputs).buildTransaction(tx)
+                return tx_res['data']
         return _bc
 
     do_libs = curry(reduce)(sub_libs)(libs.items())

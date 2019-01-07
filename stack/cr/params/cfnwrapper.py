@@ -140,7 +140,11 @@ def send_response(event, context, cfn_resp: CrResponse):
         "Data": response_data
     }
     if 'Traceback' in response_data:
-        tb_lines = response_data['Traceback'].split('\n')
+        tb_str = response_data['Traceback']
+        split_at = "The above exception was the direct cause of the following exception:"
+        if split_at in tb_str:
+            tb_str = tb_str.split(split_at)[0].strip()
+        tb_lines = tb_str.split('\n')
         nl = '\n'
         resp_dict['Reason'] += f"\nTB:\n{nl.join(tb_lines[1:3])}\n...\n{nl.join(tb_lines[-4:])}"
         del response_data['Traceback']

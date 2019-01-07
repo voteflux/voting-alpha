@@ -38,7 +38,7 @@ Metadata:
           - EC2InstanceType
           - SSHKey
           - SSHEncryptionPassword
-      
+
       - Label:
           default: Domain Name configuration
         Parameters:
@@ -171,6 +171,10 @@ Parameters:
 #    Type: String
 #    AllowedValues: ['true', 'false']
 #    Default: 'true'
+  pChaincodeTimeout:
+    Type: Number
+    Default: 10
+    Description: "You only need to extend this if you have incredibly complex SC syystems or need to wait for a slow/public network"
 
 
 Conditions:
@@ -208,7 +212,7 @@ Resources:
 
   rStaticBucket:
     Type: AWS::S3::Bucket
-    Properties: 
+    Properties:
       AccessControl: PublicRead
       BucketName: !Sub ${NamePrefix}-static-resources
       CorsConfiguration:
@@ -554,6 +558,7 @@ Resources:
       - rConsensusNode0
     Properties:
       TemplateURL: ./nested/sv-chaincode-loader.yaml
+      TimeoutInMinutes: !Ref pChaincodeTimeout
       Parameters:
 #        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
         pNamePrefix: !Ref NamePrefix
