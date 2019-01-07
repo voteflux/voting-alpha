@@ -27,34 +27,34 @@ Resources:
 #      pSubdomain: !Ref pSubdomain
       pPublicNodeDomain: !Ref pPublicNodeDomain
       pSmartContracts:
-        - Type: deploy
-          Name: membership
-        - Type: deploy
-          Name: bblib-v7
-        - Type: deploy
-          Name: bbfarm
-          Libraries:
+        - Name: membership
+          Type: deploy
+        - Name: bblib-v7
+          Type: deploy
+        - Libraries:
             __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
-            somethingelsethatisntused: athing!
-        - Type: deploy
-          Name: sv-backend
-        - Type: deploy
-          Name: sv-payments
-          Inputs:
+            somethingelsethatisntused: athsng!
+          Name: bbfarm
+          Type: deploy
+        - Name: sv-backend
+          Type: deploy
+        - Inputs:
             - '%self'
-        - Type: deploy
-          Name: sv-comm-auction
-        - Type: deploy
-          Name: sv-index
-          Inputs:
+            # - 'uint256:0x48934839489348'
+          Name: sv-payments
+          Type: deploy
+        - Name: sv-comm-auction
+          Type: deploy
+        - Inputs:
             - $sv-backend
             - $sv-payments
-            - '%addr-zero'
+            - '%addr-ones'
             - $bbfarm
             - $sv-comm-auction
-            #- Type: 'uint256'
-            #  Value: 0x1234
-
+          Libraries:
+            somelib: someval
+          Name: sv-index
+          Type: deploy
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
@@ -76,7 +76,7 @@ Resources:
               - ssm:PutParameter
               - ssm:DeleteParameter
             Resource:
-              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-addr-*"
+              - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-sc-*"
           - Effect: Allow
             Action:
               - ssm:DescribeParameters

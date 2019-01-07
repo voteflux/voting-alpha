@@ -110,6 +110,8 @@ def wrap_handler(_handler):
                           CrResponse(CfnStatus.FAILED, {
                               "Message": "Error: %s" % (repr(e),), "Traceback": tb_str
                           }, resource_id))
+        finally:
+            signal.alarm(0)
 
     return inner
 

@@ -101,12 +101,15 @@ def priv_to_addr(_priv):
     return Account.privateKeyToAccount(_priv).address
 
 
-def get_ssm_param_no_enc(name):
+def get_ssm_param_no_enc(name, decode_json=False):
     try:
-        return ssm.get_parameter(Name=name)['Parameter']['Value']
+        value = ssm.get_parameter(Name=name)['Parameter']['Value']
     except Exception as e:
         logging.warning(f"Error during get_parameter: {repr(e)}")
         return None
+    if decode_json:
+        value = json.loads(value)
+    return value
 
 
 def get_ssm_param_with_enc(name):
@@ -117,11 +120,13 @@ def get_ssm_param_with_enc(name):
         return None
 
 
-def put_param_no_enc(name, value, description='', dry_run=False):
+def put_param_no_enc(name, value, description='', encode_json=False, overwrite=False, dry_run=False):
     if dry_run:
         logging.debug(f'[dry_run] put_param: {name}, value: {value}')
         return {}
-    return ssm.put_parameter(Name=name, Value=value, Type="String", Description=description)
+    if encode_json:
+        value = json.dumps(value)
+    return ssm.put_parameter(Name=name, Value=value, Type="String", Description=description, Overwrite=overwrite)
 
 
 def put_param_with_enc(name, value, description='', overwrite=False):
@@ -168,6 +173,10 @@ def gen_ssm_sc_addr(name_prefix, sc_name):
     return f"sv-{name_prefix}-param-sc-addr-{sc_name}"
 
 
+def gen_ssm_sc_inputs(name_prefix, sc_name):
+    return f"sv-{name_prefix}-param-sc-inputs-{sc_name}"
+
+
 def list_ssm_params_starting_with(*args, next_token='', max_results=50) -> List[SsmParam]:
     filters = [{'Key': 'Name', 'Option': 'BeginsWith', 'Values': args}]
     extra = {} if not next_token else {'NextToken': next_token}
@@ -179,7 +188,11 @@ def list_ssm_params_starting_with(*args, next_token='', max_results=50) -> List[
 
 
 def del_ssm_param(name):
-    return ssm.delete_parameter(Name=name)
+    try:
+        return ssm.delete_parameter(Name=name)
+    except Exception as e:
+        if "ParameterNotFound" not in repr(e):
+            raise e
 
 
 def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (list, list, list):
