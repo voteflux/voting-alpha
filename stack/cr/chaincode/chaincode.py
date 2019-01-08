@@ -17,7 +17,8 @@ from typing import List, Dict, Iterable, Callable, Union, TypeVar
 
 from lib import gen_ssm_nodekey_service, SVC_CHAINCODE, gen_ssm_networkid, gen_ssm_sc_addr, \
     get_ssm_param_no_enc, get_ssm_param_with_enc, put_param_no_enc, put_param_with_enc, ssm_param_exists, \
-    Timer, update_dict, list_ssm_params_starting_with, del_ssm_param, gen_ssm_sc_inputs
+    Timer, update_dict, list_ssm_params_starting_with, del_ssm_param, gen_ssm_inputs, gen_ssm_calltx, gen_ssm_send, \
+    gen_ssm_call
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("chaincode")
@@ -34,22 +35,58 @@ class ResolveVarValError(Exception):
     pass
 
 
+class OpType(Enum):
+    Deploy = "deploy"
+    CallTx = "calltx"
+    Call = "call"
+    Send = "send"
+
+
+class CallTxResult:
+    def __init__(self, name, output, sc_addr, txid, cached=False):
+        self.name = name
+        self.output = output
+        self.txid = txid
+        self.sc_addr = sc_addr
+        self.cached = cached
+
+
+class CallResult:
+    def __init__(self, name, output, sc_addr, cached=False):
+        self.name = name
+        self.output = output
+        self.sc_addr = sc_addr
+        self.cached = cached
+
+
+class SendResult:
+    def __init__(self, name, to, value, cached=False):
+        self.name = name
+        self.to = to
+        self.value = value
+        self.cached = cached
+
+
 class Contract:
     def __init__(self, name, bytecode, ssm_param_name, ssm_param_inputs, addr=None, inputs=None, gas_used=None,
                  cached=False):
         self.name = name
         self.bytecode = bytecode
-        self.ssm_param_name = ssm_param_name
-        self.ssm_param_inputs = ssm_param_inputs
         self.addr = addr
         self.inputs = inputs
         self.gas_used = gas_used
         self.cached = cached
+        self.ssm_param_name = ssm_param_name
+        self.ssm_param_inputs = ssm_param_inputs
 
     def init_args(self):
         # matches function signature of __init__
         return [self.name, self.bytecode, self.ssm_param_name, self.ssm_param_inputs, self.addr, self.inputs,
                 self.gas_used, self.cached]
+
+    def ssm_names(self, name_prefix):
+        # return (gen_ssm_sc_addr(name_prefix, self.name), gen_ssm_sc_inputs(name_prefix, self.name))
+        return (self.ssm_param_name, self.ssm_param_inputs)
 
     def set_addr(self, addr):
         self.addr = addr
@@ -67,6 +104,24 @@ class Contract:
 
     def __repr__(self):
         return f"<Contract({self.name}): [Addr:{self.addr},BC(len):{len(self.bytecode)}]>"
+
+
+op_str_to_ty = {
+    OpType.Deploy.value: Contract,
+    OpType.CallTx.value: CallTxResult,
+    OpType.Call.value: CallResult,
+    OpType.Send.value: SendResult,
+}
+
+
+class Op:
+    def __init__(self, ty: OpType, result: Union[Contract, CallTxResult, CallResult, SendResult]):
+        expected_type = op_str_to_ty[ty.value]
+        if type(result) is not expected_type:
+            raise TypeError(f'Incorrect types passed to Op. ty: {ty.value}, result: {str(type(result))}')
+
+        self.ty = ty
+        self.result = result
 
 
 def reduce(func: Callable[[Acc, T], Acc], xs: Iterable[T], init: Acc) -> Acc:
@@ -236,7 +291,10 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
         inputs = next.get('Inputs', [])
         libs = next.get('Libraries', {})
         ssm_name = gen_ssm_sc_addr(name_prefix, entry_name)
-        ssm_inputs = gen_ssm_sc_inputs(name_prefix, entry_name)
+        ssm_calltx = gen_ssm_calltx(name_prefix, entry_name)
+        ssm_call = gen_ssm_call(name_prefix, entry_name)
+        ssm_send = gen_ssm_send(name_prefix, entry_name)
+        ssm_inputs = gen_ssm_inputs(name_prefix, entry_name)
 
         def relies_only_on_cached():
             # currently the only dependant outputs possible are addresses; TODO: add output values from function calls
@@ -260,7 +318,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             nonlocal nonce
             if not dry_run and ssm_param_exists(ssm_name) and ssm_param_exists(ssm_inputs) and relies_only_on_cached():
                 # we don't want to deploy
-                log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached contracts.")
+                log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached ops.")
                 return Contract(entry_name, '', ssm_name, ssm_inputs, addr=get_ssm_param_no_enc(ssm_name),
                                 inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True)
 
@@ -279,12 +337,23 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             nonce += 1
             return c_done
 
+        def calltx(_prevs, _next):
+            nonlocal nonce
+            if not dry_run and ssm_param_exists(ssm_name) and ssm_param_exists(ssm_inputs) and relies_only_on_cached():
+                # we don't want to make tx
+                log.info(f"Skipping tx {entry_name} as it is cached and relies only on cached ops.")
+                return CallTxResult(entry_name, get_ssm_param_no_enc(ssm_calltx), ssm_calltx, ssm_inputs,
+                                inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True)
+
+
         ops = AttributeDict({
-            'deploy': deploy,
+            OpType.Deploy.value: deploy,
+            OpType.CallTx.value: calltx,
         })
 
         if next['Type'] not in ops:
-            raise Exception(f'SC Deploy/Call type {next["Type"]} is not recognised as a valid type of operation.')
+            raise Exception(f'SC Deploy/Call type {next["Type"]} is not recognised as a valid type of operation. '
+                            'Valid Types: {set(ops.values())}')
         ret[entry_name] = ops[next['Type']](prev_outputs, next)
         return ret
 
@@ -336,9 +405,9 @@ def chaincode_handler(event, ctx, **params):
 def do_deletes(name_prefix, keep_scs: List):
     keep_names = set()\
         .union({gen_ssm_sc_addr(name_prefix, op['Name']) for op in keep_scs})\
-        .union({gen_ssm_sc_inputs(name_prefix, op['Name']) for op in keep_scs})
+        .union({gen_ssm_inputs(name_prefix, op['Name']) for op in keep_scs})
     params = list_ssm_params_starting_with(gen_ssm_sc_addr(name_prefix, '')) + \
-             list_ssm_params_starting_with(gen_ssm_sc_inputs(name_prefix, ''))
+             list_ssm_params_starting_with(gen_ssm_inputs(name_prefix, ''))
     for param in params:
         ssm_name = param['Name']
         if ssm_name in keep_names:

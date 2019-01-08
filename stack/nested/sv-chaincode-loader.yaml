@@ -55,6 +55,19 @@ Resources:
             somelib: someval
           Name: sv-index
           Type: deploy
+        - Name: ix-backend-perms
+          Function: $sv-backend.setPermissions
+          Inputs: [ $sv-index, bool:true ]
+          Type: calltx
+        - Name: ix-payments-perms
+          Function: $sv-payments.setPermissions
+          Inputs: [ $sv-index, bool:true ]
+          Type: calltx
+        - Name: ix-bbfarm-perms
+          Function: $bbfarm.setPermissions
+          Inputs: [ $sv-index, bool:true ]
+          Type: calltx
+
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function

@@ -173,8 +173,20 @@ def gen_ssm_sc_addr(name_prefix, sc_name):
     return f"sv-{name_prefix}-param-sc-addr-{sc_name}"
 
 
-def gen_ssm_sc_inputs(name_prefix, sc_name):
+def gen_ssm_inputs(name_prefix, sc_name):
     return f"sv-{name_prefix}-param-sc-inputs-{sc_name}"
+
+
+def gen_ssm_calltx(name_prefix, sc_name):
+    return f"sv-{name_prefix}-param-sc-calltx-{sc_name}"
+
+
+def gen_ssm_call(name_prefix, sc_name):
+    return f"sv-{name_prefix}-param-sc-call-{sc_name}"
+
+
+def gen_ssm_send(name_prefix, sc_name):
+    return f"sv-{name_prefix}-param-sc-send-{sc_name}"
 
 
 def list_ssm_params_starting_with(*args, next_token='', max_results=50) -> List[SsmParam]:
