@@ -382,10 +382,13 @@ def deploy_macros(stack_name):
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
 @click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING,
               help="the ssh key with which to configure EC2 nodes.")
-@click.option("--disable-use-existing", default=False, is_flag=True, type=click.BOOL,
-              help="do not use tmp-stack.yaml if it exists")
+@click.option("--use-existing", default=False, is_flag=True, type=click.BOOL,
+              help="use tmp-stack.yaml if it exists instead of running aws cfn package")
+@click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
+              help="do not package a new template, just redeploy the last one uploaded to S3.")
 @click.pass_context
-def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name, disable_use_existing):
+def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name, use_existing,
+                use_last_uploaded):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -393,20 +396,22 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         await_in_prog(stack_name)
 
     TMP_TMPL_FILE = 'tmp-stack.yaml'
-
-    if os.path.exists(TMP_TMPL_FILE) and not disable_use_existing:
-        print(f"{TMP_TMPL_FILE} exists - skipping `aws cloudformation package`; "
-              f"use --disable-use-existing to disable this and rm the old tmp file.")
-    else:
-        must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
-                 .format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
     obj_key = "templates/" + STACK_TMPL.split('/')[-1]
     s3 = boto3.client('s3')
     s3_tfer = S3Transfer(s3)
-    s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
-    if del_packaged_tmpl:
-        os.system("rm {}".format(TMP_TMPL_FILE))
+
+    if not use_last_uploaded:
+        if os.path.exists(TMP_TMPL_FILE) and use_existing:
+            print(f"{TMP_TMPL_FILE} exists - skipping `aws cloudformation package`; "
+                  f"use --disable-use-existing to disable this and rm the old tmp file.")
+        else:
+            must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
+                     .format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
+        # upload tmp file regardless
+        s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
+
     obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+    print(f"Template URL: {obj_url}")
 
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
@@ -455,8 +460,12 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
                     print_output("Deploy failed and is deleted.")
             else:
                 print_output("Deploy Success! {}".format(cfn_evt_url))
+                if del_packaged_tmpl:
+                    os.system("rm {}".format(TMP_TMPL_FILE))
         else:
             print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
+            if del_packaged_tmpl:
+                os.system("rm {}".format(TMP_TMPL_FILE))
 
     else:
         if open_browser:

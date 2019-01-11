@@ -282,7 +282,8 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
         _inputs = []
         if len(inputs) > 0:
             abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(_input)} for (i, _input) in enumerate(inputs)]}
-            abi.update({'payable': 'true'} if 'Value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
+            abi.update(
+                {'payable': 'true'} if 'Value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
             tx = {'gasPrice': 1, 'gas': 7500000}
             _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs), [varval_from_input(i) for i in inputs]))
             log.info(f'inputs to constructor/function: {_inputs}')
@@ -293,7 +294,8 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
                 func_addr = resolve_var_val(acct, prev_outs, func_addr_ptr)
                 abi.update({"type": "function", "name": func_name, "outputs": [], "constant": False})
                 log.info(f"do_inputs: {func_addr}.{func_name}({', '.join(map(str, _inputs))}) w/ abi: {abi}")
-                tx_res.update(w3.eth.contract(abi=[abi], address=func_addr).functions[func_name](*_inputs).buildTransaction(tx))
+                tx_res.update(
+                    w3.eth.contract(abi=[abi], address=func_addr).functions[func_name](*_inputs).buildTransaction(tx))
             else:
                 abi.update({"type": "constructor"})
                 log.info(f"do_inputs: constructor({', '.join(map(str, _inputs))}) w/ abi: {abi}")
@@ -342,7 +344,8 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
 
         def deploy(_prevs, _next):
             nonlocal nonce
-            if not dry_run and ssm_param_exists(ssm_deploy) and ssm_param_exists(ssm_inputs) and relies_only_on_cached():
+            if not dry_run and ssm_param_exists(ssm_deploy) and ssm_param_exists(
+                    ssm_inputs) and relies_only_on_cached():
                 # we don't want to deploy
                 log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached ops.")
                 return Contract(entry_name, '', ssm_deploy, ssm_inputs, addr=get_ssm_param_no_enc(ssm_deploy),
@@ -377,7 +380,8 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
 
         def calltx(_prevs, _next):
             nonlocal nonce
-            if not dry_run and ssm_param_exists(ssm_calltx) and ssm_param_exists(ssm_inputs) and relies_only_on_cached():
+            if not dry_run and ssm_param_exists(ssm_calltx) and ssm_param_exists(
+                    ssm_inputs) and relies_only_on_cached():
                 # we don't want to make tx
                 log.info(f"Skipping tx {entry_name} as it is cached and relies only on cached ops.")
                 return CallTxResult(entry_name, _next['Function'], get_ssm_param_no_enc(ssm_calltx),
@@ -395,11 +399,12 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
 
             tx_r = w3.eth.getTransactionReceipt(tx_id)
 
-            put_param_no_enc(ssm_calltx, tx_id.hex(), description=f"TXID for {entry_name} (calltx) operation", overwrite=True, dry_run=dry_run)
-            put_param_no_enc(ssm_inputs, _inputs, description=f"Inputs for {entry_name} (calltx) operation", overwrite=True, encode_json=True, dry_run=dry_run)
+            put_param_no_enc(ssm_calltx, tx_id.hex(), description=f"TXID for {entry_name} (calltx) operation",
+                             overwrite=True, dry_run=dry_run)
+            put_param_no_enc(ssm_inputs, _inputs, description=f"Inputs for {entry_name} (calltx) operation",
+                             overwrite=True, encode_json=True, dry_run=dry_run)
 
             return CallTxResult(entry_name, _next['Function'], tx_id.hex(), inputs=_inputs)
-
 
         ops = AttributeDict({
             OpType.Deploy.value: deploy,
@@ -429,8 +434,10 @@ def chaincode_handler(event, ctx, **params):
     def do_idempotent_deploys():
         acct = load_privkey(name_prefix, SVC_CHAINCODE)
         # w3 = Web3(Web3.WebsocketProvider(f"ws://public-node-0.{subdomain}.{hosted_zone_domain}:8546"))
-        w3 = Web3(Web3.WebsocketProvider(f"ws://{public_node_domain}:8546"))
-        log.info(f'')
+        ws_connect_url = f"ws://{public_node_domain}:8546"
+        log.info(f"Connecting to: {ws_connect_url}")
+        w3 = Web3(Web3.WebsocketProvider(ws_connect_url))
+        log.info(f"w3.eth.getBlock('latest'): {json.dumps(dict(w3.eth.getBlock('latest')))}")
 
         chainid = int(get_chainid(name_prefix))
 
@@ -458,11 +465,17 @@ def chaincode_handler(event, ctx, **params):
 
 
 def do_deletes(name_prefix, keep_scs: List):
-    keep_names = set()\
-        .union({gen_ssm_sc_addr(name_prefix, op['Name']) for op in keep_scs})\
-        .union({gen_ssm_inputs(name_prefix, op['Name']) for op in keep_scs})
+    keep_names = set() \
+        .union({gen_ssm_sc_addr(name_prefix, op['Name']) for op in keep_scs}) \
+        .union({gen_ssm_inputs(name_prefix, op['Name']) for op in keep_scs}) \
+        .union({gen_ssm_calltx(name_prefix, op['Name']) for op in keep_scs}) \
+        .union({gen_ssm_call(name_prefix, op['Name']) for op in keep_scs}) \
+        .union({gen_ssm_send(name_prefix, op['Name']) for op in keep_scs})
     params = list_ssm_params_starting_with(gen_ssm_sc_addr(name_prefix, '')) + \
-             list_ssm_params_starting_with(gen_ssm_inputs(name_prefix, ''))
+        list_ssm_params_starting_with(gen_ssm_inputs(name_prefix, '')) + \
+        list_ssm_params_starting_with(gen_ssm_calltx(name_prefix, '')) + \
+        list_ssm_params_starting_with(gen_ssm_call(name_prefix, '')) + \
+        list_ssm_params_starting_with(gen_ssm_send(name_prefix, ''))
     for param in params:
         ssm_name = param['Name']
         if ssm_name in keep_names:
