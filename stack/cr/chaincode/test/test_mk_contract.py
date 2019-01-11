@@ -1,3 +1,4 @@
+import json
 import sys, os
 import time
 
@@ -14,7 +15,6 @@ from hexbytes import HexBytes
 
 from web3.datastructures import AttributeDict
 from web3 import Web3, EthereumTesterProvider
-# from eth_tester import PyEVMBackend, EthereumTester
 from eth_account import Account
 from eth_utils import keccak
 
@@ -55,7 +55,11 @@ def getBlock(*args):
 #     })
 # })
 
-w3 = Web3(EthereumTesterProvider())
+
+from eth_tester import PyEVMBackend, EthereumTester
+pyevm_backend = PyEVMBackend(genesis_parameters=PyEVMBackend._generate_genesis_params({'gas_limit': 8000000}))
+test_chain = EthereumTester(backend=pyevm_backend)
+w3 = Web3(EthereumTesterProvider(ethereum_tester=test_chain))
 
 
 def mk_deploy(name, inputs=None, libs=None):
@@ -63,9 +67,12 @@ def mk_deploy(name, inputs=None, libs=None):
     inputs = list() if inputs is None else list(inputs)
     return {'Name': name, 'Inputs': inputs, 'Libraries': libs, 'Type': 'deploy'}
 
+def mk_calltx(name, function, inputs=None):
+    return {'Name': name, 'Function': function, 'Inputs': inputs if inputs is not None else [], 'Type': 'calltx'}
+
 
 def test_mk_contract():
-    name_prefix = "test"
+    name_prefix = "localtest"
     acct = Account.privateKeyToAccount("0x" + b"aedufghieuhiughekjudsdfahskljdhf".hex())
     tx_resp = w3.eth.sendTransaction({'to': acct.address, 'from': w3.eth.accounts[0], 'value': 10 * 10 ** 18})
     log.info(f'tx_resp: {tx_resp}')
@@ -79,13 +86,19 @@ def test_mk_contract():
         mk_deploy('membership'),
         mk_deploy('bblib-v7'),
         mk_deploy('bbfarm', libs={"__./contracts/BBLib.v7.sol:BBLibV7______": '$bblib-v7'}),
-        mk_deploy('sv-payments', inputs=['%self'])
+        mk_deploy('sv-payments', inputs=['^self']),
+        mk_deploy('sv-backend'),
+        mk_deploy('sv-comm-auction'),
+        mk_deploy('sv-index', inputs=['$sv-backend','$sv-payments','^addr-ones','$bbfarm','$sv-comm-auction',]),
+        mk_calltx('ix-backend-perms', '$sv-backend.setPermissions', ['$sv-index','bool:true']),
+        mk_calltx('ix-payments-perms', '$sv-payments.setPermissions', ['$sv-index','bool:true']),
+        mk_calltx('ix-bbfarm-perms', '$bbfarm.setPermissions', ['$sv-index','bool:true'])
     ]
 
     processed_scs = functools.reduce(mk_contract(name_prefix, w3, acct, chainid, nonce=nonce, dry_run=True),
                                      smart_contracts_to_deploy, dict())
 
-    print(processed_scs)
+    print(json.dumps({k: repr(op) for k, op in processed_scs.items()}, indent=2))
     return True
 
 

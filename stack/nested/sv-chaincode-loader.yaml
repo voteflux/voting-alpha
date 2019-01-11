@@ -39,8 +39,7 @@ Resources:
         - Name: sv-backend
           Type: deploy
         - Inputs:
-            - '%self'
-            # - 'uint256:0x48934839489348'
+            - ^self
           Name: sv-payments
           Type: deploy
         - Name: sv-comm-auction
@@ -48,11 +47,9 @@ Resources:
         - Inputs:
             - $sv-backend
             - $sv-payments
-            - '%addr-ones'
+            - ^addr-ones
             - $bbfarm
             - $sv-comm-auction
-          Libraries:
-            somelib: someval
           Name: sv-index
           Type: deploy
         - Name: ix-backend-perms
