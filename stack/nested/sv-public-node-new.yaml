@@ -70,16 +70,22 @@ Resources:
               --ws-origins=all \
               --pruning=archive \
               --node-key=$ENODE_SECRET
+          res=$?
           docker run --name ipfsd -d -p 5001:5001 -p 4001:4001 ipfs/go-ipfs
           docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Origin '["*"]'
           docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Methods '["PUT", "GET", "POST"]'
           docker exec ipfsd ipfs config --json API.HTTPHeaders.Access-Control-Allow-Credentials '["true"]'
           docker exec ipfsd ipfs shutdown
           docker start ipfsd
-          res=$?
+          res2=$?
+          WAIT_TIME=0
+          until curl -m 1 "http://localhost:8545/" || [ $WAIT_TIME -eq 15 ]; do sleep $(( WAIT_TIME++ )); echo "waited $WAIT_TIME for HTTP"; done
+          CURL_OUT=$(curl "http://localhost:8545/")
+          CURL_EXIT=$?
+          if [[ "$CURL_EXIT" != "0" ]]; then echo 'curl never completed...'; fi
           docker ps
           docker logs parity
-          [[ "$res" == "0" ]]
+          [[ "$res" == "0" ]] && [[ "$res2" == "0" ]] && [[ "$CURL_EXIT" == "0" ]]
 
 Outputs:
   oPublicIp:

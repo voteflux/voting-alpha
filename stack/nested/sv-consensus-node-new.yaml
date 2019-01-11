@@ -56,6 +56,7 @@ Resources:
               --logging=info \
               --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
               --jsonrpc-interface=local
+          res=$?
           docker logs parity-tmp
           set +x
           ACCOUNT_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber} --region ${AWS::Region} --with-decryption --query Parameter.Value --output text)
@@ -77,10 +78,15 @@ Resources:
               --engine-signer=${pSignerAddress} --password=/static/password.txt \
               --reseal-min-period=5000 --reseal-max-period=900000 \
               --min-gas-price=1
-          res=$?
+          res2=$?
+          WAIT_TIME=0
+          until curl -m 1 "http://localhost:8545/" || [ $WAIT_TIME -eq 15 ]; do sleep $(( WAIT_TIME++ )); echo "waited $WAIT_TIME for HTTP"; done
+          CURL_OUT=$(curl "http://localhost:8545/")
+          CURL_EXIT=$?
+          if [[ "$CURL_EXIT" != "0" ]]; then echo 'curl never completed...'; fi
           docker ps
           docker logs parity
-          [[ "$res" == "0" ]]
+          [[ "$res" == "0" ]] && [[ "$res2" == "0" ]] && [[ "$CURL_EXIT" == "0" ]]
 
 Outputs:
   oPublicIp:

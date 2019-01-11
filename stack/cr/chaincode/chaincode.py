@@ -4,11 +4,13 @@ import time
 import logging
 import os
 
+
 from cfnwrapper import *
 
 from eth_utils import remove_0x_prefix
 from toolz.functoolz import curry, pipe
 from web3 import Web3
+from web3.middleware import http_retry_request_middleware, attrdict_middleware, pythonic_middleware
 from web3.datastructures import AttributeDict
 from eth_account import Account
 from eth_account.signers.local import LocalAccount
@@ -54,6 +56,9 @@ class CallTxResult:
         self.cached = cached
         self.inputs = [] if inputs is None else inputs
 
+    def mk_output(self):
+        return (f"{self.name}-Txid".title(), self.txid)
+
     def __str__(self):
         return f"<Contract({self.name}): [Txid:{self.txid}]>"
 
@@ -68,14 +73,19 @@ class CallResult:
         self.sc_addr = sc_addr
         self.cached = cached
 
+    def mk_output(self):
+        return (f"{self.name}-Output".title(), self.output)
 
 class SendResult:
-    def __init__(self, name, to, value, cached=False):
+    def __init__(self, name, to, value, txid, cached=False):
         self.name = name
         self.to = to
         self.value = value
+        self.txid = txid
         self.cached = cached
 
+    def mk_output(self):
+        return (f"{self.name}-Txid".title(), self.txid)
 
 class Contract:
     def __init__(self, name, bytecode, ssm_param_name, ssm_param_inputs, addr=None, inputs=None, gas_used=None,
@@ -93,6 +103,9 @@ class Contract:
         # matches function signature of __init__
         return [self.name, self.bytecode, self.ssm_param_name, self.ssm_param_inputs, self.addr, self.inputs,
                 self.gas_used, self.cached]
+
+    def mk_output(self):
+        return (f"{self.name}-Addr".title(), self.addr)
 
     def ssm_names(self, name_prefix):
         # return (gen_ssm_sc_addr(name_prefix, self.name), gen_ssm_sc_inputs(name_prefix, self.name))
@@ -435,9 +448,11 @@ def chaincode_handler(event, ctx, **params):
         acct = load_privkey(name_prefix, SVC_CHAINCODE)
         # w3 = Web3(Web3.WebsocketProvider(f"ws://public-node-0.{subdomain}.{hosted_zone_domain}:8546"))
         ws_connect_url = f"ws://{public_node_domain}:8546"
-        log.info(f"Connecting to: {ws_connect_url}")
-        w3 = Web3(Web3.WebsocketProvider(ws_connect_url))
-        log.info(f"w3.eth.getBlock('latest'): {json.dumps(dict(w3.eth.getBlock('latest')))}")
+        http_connect_url = f"http://{public_node_domain}:8545"
+        log.info(f"Connecting to: {http_connect_url}")
+        # w3 = Web3(Web3.WebsocketProvider(ws_connect_url))
+        w3 = Web3(Web3.HTTPProvider(http_connect_url))  #, middlewares=[http_retry_request_middleware, attrdict_middleware, pythonic_middleware])
+        log.info(f"w3.eth.getBlock('latest'): {dict(w3.eth.getBlock('latest'))}")
 
         chainid = int(get_chainid(name_prefix))
 
@@ -449,7 +464,7 @@ def chaincode_handler(event, ctx, **params):
 
         log.info(f"processed_scs: {processed_scs}")
 
-        data = {f"{c.name.title()}Addr": c.addr for c in processed_scs.values()}
+        data = dict([c.mk_output() for c in processed_scs.values()])
 
         return CrResponse(CfnStatus.SUCCESS, data=data, physical_id=physical_id)
 

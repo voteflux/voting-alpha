@@ -365,24 +365,25 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: 
     NetworkId = params['NetworkId']
     hex_network_id = hex(NetworkId)
 
-    INIT_BAL = hex(160693804425899027554196209234)
+    INIT_BAL = "160693804425899027554196209234"
 
     builtins = {"0000000000000000000000000000000000000001": {
-        "builtin": {"balance": "1", "name": "ecrecover", "pricing": {"linear": {"base": 3000, "word": 0}}}},
+        "balance": "1", "builtin": {"name": "ecrecover", "pricing": {"linear": {"base": 3000, "word": 0}}}},
         "0000000000000000000000000000000000000002": {
-            "builtin": {"balance": "1", "name": "sha256", "pricing": {"linear": {"base": 60, "word": 12}}}},
+            "balance": "1", "builtin": {"name": "sha256", "pricing": {"linear": {"base": 60, "word": 12}}}},
         "0000000000000000000000000000000000000003": {
-            "builtin": {"balance": "1", "name": "ripemd160", "pricing": {"linear": {"base": 600, "word": 120}}}},
+            "balance": "1", "builtin": {"name": "ripemd160", "pricing": {"linear": {"base": 600, "word": 120}}}},
         "0000000000000000000000000000000000000004": {
-            "builtin": {"balance": "1", "name": "identity", "pricing": {"linear": {"base": 15, "word": 3}}}},
+            "balance": "1", "builtin": {"name": "identity", "pricing": {"linear": {"base": 15, "word": 3}}}},
         "0000000000000000000000000000000000000005": {
-            "builtin": {"name": "modexp", "pricing": {"modexp": {"divisor": 20}}}},
+            "balance": "1", "builtin": {"name": "modexp", "pricing": {"modexp": {"divisor": 20}}}},
         "0000000000000000000000000000000000000006": {
-            "builtin": {"name": "alt_bn128_add", "pricing": {"linear": {"base": 500, "word": 0}}}},
+            "balance": "1", "builtin": {"name": "alt_bn128_add", "pricing": {"linear": {"base": 500, "word": 0}}}},
         "0000000000000000000000000000000000000007": {
-            "builtin": {"name": "alt_bn128_mul", "pricing": {"linear": {"base": 40000, "word": 0}}}},
-        "0000000000000000000000000000000000000008": {"builtin": {"name": "alt_bn128_pairing", "pricing": {
-            "alt_bn128_pairing": {"base": 100000, "pair": 80000}}}}}
+            "balance": "1", "builtin": {"name": "alt_bn128_mul", "pricing": {"linear": {"base": 40000, "word": 0}}}},
+        "0000000000000000000000000000000000000008": {
+            "balance": "1", "builtin": {"name": "alt_bn128_pairing",
+                                        "pricing": {"alt_bn128_pairing": {"base": 100000, "pair": 80000}}}}}
 
     accounts = {addr: {"balance": INIT_BAL} for addr in service_addresses}
     accounts.update(builtins)

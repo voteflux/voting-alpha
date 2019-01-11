@@ -362,6 +362,7 @@ Resources:
       BlockGasLimit: !Ref BlockGasLimit
       StackTesting: 'true'  # set to '' to disable
       pEnodeIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
+      Nonce: 348989348
 
   rParamsLambda:
     Type: AWS::Serverless::Function
@@ -564,7 +565,7 @@ Resources:
         pNamePrefix: !Ref NamePrefix
 #        pDomain: !Ref HostedZoneDomain
 #        pSubdomain: !Ref Subdomain
-        pPublicNodeDomain: !GetAtt rPublicNode0.Outputs.oDomainName
+        pPublicNodeDomain: !GetAtt rPublicNode0.Outputs.oPublicIp
 
 #  rPublicLoadBalancer:
 #    Type: AWS::CloudFormation::Stack
