@@ -242,11 +242,11 @@ def cli(debug, offset, region):
     cfn = boto3.client('cloudformation', **cfn_extras)
 
 
-
 @cli.command(name='pip-install')
 @click.argument('target', nargs=1)
 @click.argument('pkgs', nargs=-1)
-@click.option('--no-system', type=click.BOOL, is_flag=True, default=False, help="do not include --system in pip install args")
+@click.option('--no-system', type=click.BOOL, is_flag=True, default=False,
+              help="do not include --system in pip install args")
 @click.option('--pip-args', type=click.STRING, default='', help="extra args to pass to pip3 install")
 def pip_install(target, pkgs, no_system, pip_args):
     _pkgs = ' '.join(pkgs)
@@ -276,7 +276,8 @@ def pip_install(target, pkgs, no_system, pip_args):
         if platform.system() == "Darwin":
             _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
             system = ''
-        _cmd = _cmd_outer.format(f'pip3 install {system} --target=deps -r {reqs_file} --upgrade --progress-bar emoji {pip_args}')
+        _cmd = _cmd_outer.format(
+            f'pip3 install {system} --target=deps -r {reqs_file} --upgrade --progress-bar emoji {pip_args}')
         _ec = os.system(_cmd)
 
         if _ec != 0:
@@ -288,7 +289,8 @@ def pip_install(target, pkgs, no_system, pip_args):
 
 @cli.command(name='test-chaincode')
 def test_chaincode():
-    os.system(f'docker run --rm -t -v "$PWD":/var/task lambci/lambda:build-python3.6 bash -c "cd stack/cr/chaincode; python3 test/test_mk_contract.py"')
+    os.system(
+        f'docker run --rm -t -v "$PWD":/var/task lambci/lambda:build-python3.6 bash -c "cd stack/cr/chaincode; python3 test/test_mk_contract.py"')
 
 
 @cli.command(name="stream-cfn")
@@ -324,12 +326,11 @@ def upload_func(func_path, func_name):
     print_output(f"Updated function {func_name}")
 
 
-
-
 @cli.command(name='deploy-ns')
 @click.argument('stack-path')
 @click.argument('stack-name')
-@click.option('--params', default='', help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
+@click.option('--params', default='',
+              help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
 def deploy_nestedstack(stack_path, stack_name, params):
     TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
     pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
@@ -376,12 +377,15 @@ def deploy_macros(stack_name):
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=False)
 @click.option("--open-browser/--no-open-browser", default=False)
-@click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True)
+@click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True,
+              help="Remove tmp-stack.yaml after we're done generating + uploading it")
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
 @click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING,
               help="the ssh key with which to configure EC2 nodes.")
+@click.option("--disable-use-existing", default=False, is_flag=True, type=click.BOOL,
+              help="do not use tmp-stack.yaml if it exists")
 @click.pass_context
-def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name):
+def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name, disable_use_existing):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -389,9 +393,14 @@ def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, st
         await_in_prog(stack_name)
 
     TMP_TMPL_FILE = 'tmp-stack.yaml'
+
+    if os.path.exists(TMP_TMPL_FILE) and not disable_use_existing:
+        print(f"{TMP_TMPL_FILE} exists - skipping `aws cloudformation package`; "
+              f"use --disable-use-existing to disable this and rm the old tmp file.")
+    else:
+        must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
+                 .format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
     obj_key = "templates/" + STACK_TMPL.split('/')[-1]
-    must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
-             .format(STACK_TMPL, S3_DEV_BUCKET, TMP_TMPL_FILE), silent=True)
     s3 = boto3.client('s3')
     s3_tfer = S3Transfer(s3)
     s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
