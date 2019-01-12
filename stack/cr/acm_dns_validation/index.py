@@ -81,6 +81,7 @@ def _create_acm_certificate(event, ctx):
                 IdempotencyToken=event['LogicalResourceId'],
                 SubjectAlternativeNames=[san] + additional_dn,
             )
+            LOG.info(f"request_cert response: {response}")
             return response['CertificateArn']
 
         cert_arn = None
@@ -100,7 +101,7 @@ def _create_acm_certificate(event, ctx):
 
         FRESH_CERT = False
         if not cert_arn:
-            cert_arn = request_cert()['CertificateArn']
+            cert_arn = request_cert()
             FRESH_CERT = True
 
         with Timer("ACM cert creation") as t:
@@ -135,20 +136,17 @@ def _create_acm_certificate(event, ctx):
         )
         LOG.info("r53 response: %s" % response)
 
-        if FRESH_CERT:
-            LOG.info(f"Fresh cert delete: {acm.delete_certificate(CertificateArn=cert_arn)})")
-            cert_arn = request_cert()['CertificateArn']
-
         cert_done = False
         cert_status = "PENDING_VALIDATION"
         seconds_remaining = (ctx.get_remaining_time_in_millis() // 1000) - 10
-        LOG.info(f"monitoring cert validation up to {seconds_remaining}s")
+        LOG.info(f"monitoring cert validation up to {seconds_remaining}s for cert {cert_arn}")
         with Timer("certificate DNS validation period") as t:
             while t.curr_interval < seconds_remaining and not cert_done:  # seconds
                 try:
                     cert = acm.describe_certificate(CertificateArn=cert_arn)['Certificate']
                     cert_status = cert['DomainValidationOptions'][0]['ValidationStatus']
                     cert_done = cert_status in ["SUCCESS", "FAILED"]
+                    LOG.info(f"Checked cert: {cert_status}; ({t.curr_interval}s)")
                 except Exception as e:
                     LOG.info(f"Exception while checking cert validation status: {repr(e)}")
                 finally:

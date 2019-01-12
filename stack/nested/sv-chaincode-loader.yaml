@@ -35,7 +35,7 @@ Resources:
 #        - Name: membership-add-admin
 #          Type: calltx
 #          Function: $membership.addAdmin
-#          Inputs: [ @ssm-addr ]
+#          Inputs: [ @service:members ]
         - Name: bblib-v7
           Type: deploy
         - Libraries:
@@ -74,14 +74,16 @@ Resources:
           Function: $bbfarm.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
           Type: calltx
-#        - Name: ix-mk-democ
-#          Function: $sv-index.dInit
-#          Value: 1
-#          Inputs: [ $membership, 'bool:true' ]
-#          Type: calltx
+        - Name: ix-mk-democ
+          Function: $sv-index.dInit
+          Value: 1
+          Inputs: [ $membership, 'bool:true' ]
+          Type: calltx
+          Output: MkDemocTxid
 #        - Name: democ-hash
 #          Function: $sv-backend.getGDemoc
 #          Inputs: [ 'uint256:0' ]
+#          ReturnTypes: [ bytes32 ]
 #          Type: call
 #          Output: DemocHash
 #        - Name: add-membership-admin
@@ -122,6 +124,8 @@ Outputs:
     Value: !GetAtt rChaincodeCr.MembershipAddr
 #  oDemocHash:
 #    Value: !GetAtt rChaincodeCr.DemocHash
+  oMkDemocTxid:
+    Value: !GetAtt rChaincodeCr.MkDemocTxid
   oIndexAddr:
     Value: !GetAtt rChaincodeCr.IndexAddr
   oBBFarmAddr:

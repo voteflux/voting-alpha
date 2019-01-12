@@ -241,7 +241,7 @@ def docker_lambda(cmd, extra_args=''):
 
 @click.group()
 @click.option("--debug/--no-debug", default=False)
-@click.option("--offset", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
+@click.option("--offset", "-o", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
 @click.option("--region", default="", type=click.STRING, help="specify an AWS region if need be")
 def cli(debug, offset, region):
     global cfn

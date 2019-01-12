@@ -70,8 +70,16 @@ def mk_deploy(name, inputs=None, libs=None):
     inputs = list() if inputs is None else list(inputs)
     return {'Name': name, 'Inputs': inputs, 'Libraries': libs, 'Type': 'deploy'}
 
-def mk_calltx(name, function, inputs=None):
-    return {'Name': name, 'Function': function, 'Inputs': inputs if inputs is not None else [], 'Type': 'calltx'}
+
+def mk_calltx(name, function, inputs=None, value=None):
+    ret = {'Name': name, 'Function': function, 'Inputs': inputs if inputs is not None else [], 'Type': 'calltx'}
+    if value is not None:
+        ret['Value'] = value
+    return ret
+
+
+def mk_call(name, function, inputs=[], ret_types=[]):
+    return {'Name': name, 'Function': function, 'Inputs': inputs, 'Type': 'call', 'ReturnTypes': ret_types}
 
 
 def test_mk_contract():
@@ -95,7 +103,9 @@ def test_mk_contract():
         mk_deploy('sv-index', inputs=['$sv-backend','$sv-payments','^addr-ones','$bbfarm','$sv-comm-auction',]),
         mk_calltx('ix-backend-perms', '$sv-backend.setPermissions', ['$sv-index','bool:true']),
         mk_calltx('ix-payments-perms', '$sv-payments.setPermissions', ['$sv-index','bool:true']),
-        mk_calltx('ix-bbfarm-perms', '$bbfarm.setPermissions', ['$sv-index','bool:true'])
+        mk_calltx('ix-bbfarm-perms', '$bbfarm.setPermissions', ['$sv-index','bool:true']),
+        mk_calltx('mk-democ', '$sv-index.dInit', ['$membership', 'bool:true'], value=1),
+        mk_call('democ-hash', '$sv-backend.getGDemoc', [ 'uint256:0' ], [ 'bytes32' ])
     ]
 
     processed_scs = functools.reduce(mk_contract(name_prefix, w3, acct, chainid, nonce=nonce, dry_run=True),
