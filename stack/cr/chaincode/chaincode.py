@@ -439,7 +439,7 @@ def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
             for i in to_check:
                 # note: val[1:] should always exit in prev_outputs at this point
                 sc = i[1:]
-                if sc in prev_outputs and prev_outputs[sc].cached:
+                if sc in prev_outputs and not prev_outputs[sc].cached:
                     log.info(f"not cached as {sc} is not cached")
                     return False
             try:

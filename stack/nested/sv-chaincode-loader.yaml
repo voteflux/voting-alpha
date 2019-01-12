@@ -40,7 +40,7 @@ Resources:
           Type: deploy
         - Libraries:
             __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
-            asdf: asdf8768
+            asdf: asdf876
           Name: bbfarm
           Type: deploy
           Output: BBFarmAddr
