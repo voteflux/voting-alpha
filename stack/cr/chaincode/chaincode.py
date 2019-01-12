@@ -22,7 +22,7 @@ from typing import List, Dict, Iterable, Callable, Union, TypeVar
 from lib import gen_ssm_nodekey_service, SVC_CHAINCODE, gen_ssm_networkid, gen_ssm_sc_addr, \
     get_ssm_param_no_enc, get_ssm_param_with_enc, put_param_no_enc, put_param_with_enc, ssm_param_exists, \
     Timer, update_dict, list_ssm_params_starting_with, del_ssm_param, gen_ssm_inputs, gen_ssm_calltx, gen_ssm_send, \
-    gen_ssm_call
+    gen_ssm_call, gen_ssm_service_pks
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("chaincode")
@@ -33,6 +33,9 @@ ssm = boto3.client('ssm')
 
 Acc = TypeVar('Acc')
 T = TypeVar('T')
+
+
+name_prefix = None
 
 
 class InvalidInput(Exception):
@@ -69,6 +72,9 @@ class CallTxResult(CfnOutput):
     def mk_output(self):
         return self.mk_output_name(), self.txid
 
+    def get_val(self):
+        return self.txid
+
     def __str__(self):
         return f"<CallTxResult({self.name}): [Txid:{self.txid}]>"
 
@@ -77,16 +83,25 @@ class CallTxResult(CfnOutput):
 
 
 class CallResult(CfnOutput):
-    def __init__(self, name, function, inputs, output, cached=False, op=None):
+    def __init__(self, name, function, inputs, output, ret_types, cached=False, op=None):
         self.name = name
         self.function = function
         self.inputs = [] if inputs is None else inputs
         self.output = output
+        self.ret_types = ret_types
         self.cached = cached
         self.op = op
 
     def mk_output(self):
         return self.mk_output_name(), self.output
+
+    def get_val(self):
+        return self.output
+
+    def get_ty(self):
+        if len(self.ret_types) == 1:
+            return self.ret_types[0]
+        return self.ret_types
 
     def __str__(self):
         return f"<CallResult({self.name}): [Txid:{self.output}]>"
@@ -105,6 +120,9 @@ class SendResult(CfnOutput):
 
     def mk_output(self):
         return self.mk_output_name(), self.txid
+
+    def get_val(self):
+        return self.txid
 
 class Contract(CfnOutput):
     def __init__(self, name, bytecode, ssm_param_name, ssm_param_inputs, addr=None, inputs=None, gas_used=None,
@@ -126,6 +144,12 @@ class Contract(CfnOutput):
 
     def mk_output(self):
         return self.mk_output_name(), self.addr
+
+    def get_val(self):
+        return self.addr
+
+    def get_ty(self):
+        return 'address'
 
     def ssm_names(self, name_prefix):
         # return (gen_ssm_sc_addr(name_prefix, self.name), gen_ssm_sc_inputs(name_prefix, self.name))
@@ -252,6 +276,10 @@ def _varval_is_special_addr(varval: str) -> bool:
     return type(varval) is str and varval[0] == "^"
 
 
+def _varval_is_ssm_pointer(varval: str) -> bool:
+    return type(varval) is str and varval[0] == "_"
+
+
 def _resolve_special_addr(acct, varval):
     return {
         'self': acct.address,
@@ -260,25 +288,40 @@ def _resolve_special_addr(acct, varval):
     }[varval[1:]]
 
 
-def resolve_var_val(acct, prev_outs: Dict[str, Contract], var_val):
+def _resolve_ssm_pointer(varval, dry_run=False):
+    global name_prefix
+    if dry_run:
+        return '0x2222222222222222222222222222222222222222'
+    return get_ssm_param_no_enc(gen_ssm_service_pks(name_prefix), decode_json=True)[varval[1:]]
+
+
+def is_varval(varval) -> bool:
+    return _varval_is_addr_pointer(varval) or _varval_is_special_addr(varval) or _varval_is_ssm_pointer(varval)
+
+
+def resolve_var_val(acct, prev_outs: Dict[str, Contract], var_val, default_ty='unknown-type', dry_run=False) -> (str, str):
     try:
         if _varval_is_addr_pointer(var_val):  # SC addr
-            return prev_outs[var_val[1:]].addr
+            return prev_outs[var_val[1:]].get_val()
         if _varval_is_special_addr(var_val):
             return _resolve_special_addr(acct, var_val)
+        if _varval_is_ssm_pointer(var_val):
+            return _resolve_ssm_pointer(var_val, dry_run=dry_run)
         return var_val
     except Exception as e:
-        raise ResolveVarValError(f"Unknown error occured: {repr(e)}")
+        log.error(f"Unknown error occured: {repr(e)}")
+        raise e
 
 
-def _get_input_type(_input):
+def _get_input_type(_prevs, _input):
     try:
         return _input.split(':')[0] if ':' in _input else {
-            '$': 'address',
-            '^': 'address',
-        }[_input[0]]
+            '$': lambda: _prevs[_input[1:]].get_ty(),
+            '^': lambda: 'address',
+            '_': lambda: 'address',
+        }[_input[0]]()
     except Exception as e:
-        raise InvalidInput(f"`{_input}` is not valid.")
+        raise InvalidInput(f"`{_input}` is not valid. {repr(e)}")
 
 
 def _varval_type_conv(ty, val):
@@ -319,13 +362,13 @@ def transform_outputs(ret_types, outputs):
 
 
 
-def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=dict(), sc_op=dict()) -> (Dict, List):
+def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=dict(), sc_op=dict(), dry_run=False) -> (Dict, List):
     '''Constructs an ABI on the fly based on Value,Type of inputs, resolves variables (e.g. SC addrs) which need to be,
      and returns encoded+packed arguments as a hex string with no 0x prefix. Also resolves/adds libraries if need be.'''
 
     def sub_libs(_bc, libtuple):
         lib_hole, var_val = libtuple
-        val = resolve_var_val(acct, prev_outs, var_val)
+        val = resolve_var_val(acct, prev_outs, var_val, dry_run=dry_run)
         return _bc.replace(lib_hole, remove_0x_prefix(val))
 
     def do_inputs(_bc):
@@ -333,19 +376,19 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
         tx_res = {'data': _bc}
         _inputs = []
         if len(inputs) > 0:
-            abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(_input)} for (i, _input) in enumerate(inputs)]}
+            abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(prev_outs, _input)} for (i, _input) in enumerate(inputs)]}
             abi.update({'payable': 'false', "stateMutability": "nonpayable"})
             tx = {'gasPrice': 1, 'gas': 7500000}
             if 'Value' in sc_op:
                 abi.update({'payable': 'true', 'stateMutability': 'payable'})
                 tx.update({'value': int(sc_op['Value'])})
-            _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs), [varval_from_input(i) for i in inputs]))
+            _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs)(dry_run=dry_run), [varval_from_input(i) for i in inputs]))
             log.info(f'inputs to constructor/function: {_inputs}')
             # construct the abi
             log.info(f"do_inputs: func:{func}, _inputs:{_inputs}")
             if func is not None:  # is not constructor
                 func_addr_ptr, func_name = func.split('.')
-                func_addr = resolve_var_val(acct, prev_outs, func_addr_ptr)
+                func_addr = resolve_var_val(acct, prev_outs, func_addr_ptr, dry_run=dry_run)
                 abi.update({"type": "function", "name": func_name, "outputs": [], "constant": False, 'stateMutability': 'view'})
                 ret_types = sc_op.get('ReturnTypes', None)
                 if ret_types:
@@ -373,7 +416,10 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
                 )
 
 
-def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
+def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
+    global name_prefix
+    name_prefix = _name_prefix
+
     def do_fold(prev_outputs: Dict[str, Contract], next):
         nonlocal nonce
 
@@ -391,15 +437,15 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             # currently the only dependant outputs possible are addresses; TODO: add output values from function calls
             to_check = [x for x in (inputs + list(libs.values())) if _varval_is_addr_pointer(x)]
             for i in to_check:
-                val = resolve_var_val(acct, prev_outputs, i)
                 # note: val[1:] should always exit in prev_outputs at this point
-                if _varval_is_addr_pointer(val) and not prev_outputs[val[1:]].cached:
-                    log.info(f"not cached as {val} is not cached")
+                sc = i[1:]
+                if sc in prev_outputs and prev_outputs[sc].cached:
+                    log.info(f"not cached as {sc} is not cached")
                     return False
             try:
                 cached_inputs = get_ssm_param_no_enc(ssm_inputs, decode_json=True)
                 for (a, b) in zip(inputs, cached_inputs):
-                    if resolve_var_val(acct, _prevs, a) != b:
+                    if resolve_var_val(acct, _prevs, varval_from_input(a), dry_run=dry_run) != b:
                         log.info(f"not cached as {a} != {b} for inputs: {inputs}, (cached:) {cached_inputs}")
                         return False
             except Exception as e:
@@ -423,7 +469,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             else:
                 # local deploy
                 raw_bc = get_bytecode(f"bytecode/{entry_name}.bin")
-            tx, _inputs = process_bytecode(w3, acct, raw_bc, _prevs, inputs, libs=libs, sc_op=_next)
+            tx, _inputs = process_bytecode(w3, acct, raw_bc, _prevs, inputs, libs=libs, sc_op=_next, dry_run=dry_run)
             bc = tx['data']
             log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
             c_done = deploy_contract(w3, acct, chainid, nonce,
@@ -453,7 +499,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
                                     inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True, op=_next)
 
             log.info(f"CallTx: {entry_name} - not cached")
-            tx, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next)
+            tx, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next, dry_run=dry_run)
             log.info(f"CallTx got from process_bytecode: {tx}")
 
             tx['nonce'] = nonce
@@ -475,10 +521,10 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             if not dry_run and ssm_param_exists(ssm_call) and ssm_param_exists(ssm_inputs) and relies_only_on_cached(_prevs):
                 log.info(f"skipping {entry_name} - cached")
                 return CallResult(entry_name, _next['Function'], get_ssm_param_no_enc(ssm_inputs, decode_json=True),
-                                  get_ssm_param_no_enc(ssm_call, decode_json=True), cached=True, op=_next)
+                                  get_ssm_param_no_enc(ssm_call, decode_json=True), ret_types=_next['ReturnTypes'], cached=True, op=_next)
 
             log.info(f"Call: {entry_name} - not cached")
-            tx_resp, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next)
+            tx_resp, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next, dry_run=dry_run)
             log.info(f"Call got from process_bytecode: {tx_resp}")
 
             put_param_no_enc(ssm_call, tx_resp, description=f"TXID for {entry_name} (call) operation",
@@ -486,7 +532,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             put_param_no_enc(ssm_inputs, _inputs, description=f"Inputs for {entry_name} (call) operation",
                              overwrite=True, encode_json=True, dry_run=dry_run)
 
-            return CallResult(entry_name, _next['Function'], _inputs, tx_resp, op=_next)
+            return CallResult(entry_name, _next['Function'], _inputs, tx_resp, ret_types=_next['ReturnTypes'], op=_next)
 
         ops = AttributeDict({
             OpType.Deploy.value: deploy,

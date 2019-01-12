@@ -83,7 +83,7 @@ def mk_call(name, function, inputs=[], ret_types=[]):
 
 
 def test_mk_contract():
-    name_prefix = "localtest"
+    name_prefix = "tnalpha"
     acct = Account.privateKeyToAccount("0x" + b"aedufghieuhiughekjudsdfahskljdhf".hex())
     tx_resp = w3.eth.sendTransaction({'to': acct.address, 'from': w3.eth.accounts[0], 'value': 10 * 10 ** 18})
     log.info(f'tx_resp: {tx_resp}')
@@ -95,6 +95,7 @@ def test_mk_contract():
 
     smart_contracts_to_deploy = [
         mk_deploy('membership'),
+        mk_calltx('membership-add-admin', '$membership.addAdmin', inputs=['_members']),
         mk_deploy('bblib-v7'),
         mk_deploy('bbfarm', libs={"__./contracts/BBLib.v7.sol:BBLibV7______": '$bblib-v7'}),
         mk_deploy('sv-payments', inputs=['^self']),
@@ -104,9 +105,12 @@ def test_mk_contract():
         mk_calltx('ix-backend-perms', '$sv-backend.setPermissions', ['$sv-index','bool:true']),
         mk_calltx('ix-payments-perms', '$sv-payments.setPermissions', ['$sv-index','bool:true']),
         mk_calltx('ix-bbfarm-perms', '$bbfarm.setPermissions', ['$sv-index','bool:true']),
-        mk_calltx('mk-democ', '$sv-index.dInit', ['$membership', 'bool:true'], value=1),
-        mk_call('democ-hash', '$sv-backend.getGDemoc', [ 'uint256:0' ], [ 'bytes32' ])
+        mk_calltx('ix-mk-democ', '$sv-index.dInit', ['$membership', 'bool:true'], value=1),
+        mk_call('democ-hash', '$sv-backend.getGDemoc', [ 'uint256:0' ], [ 'bytes32' ]),
+        mk_calltx('democ-add-admin', '$sv-index.setDEditor', ['$democ-hash', '_members', 'bool:true']),
     ]
+
+    # smart_contracts_to_deploy += smart_contracts_to_deploy
 
     processed_scs = functools.reduce(mk_contract(name_prefix, w3, acct, chainid, nonce=nonce, dry_run=True),
                                      smart_contracts_to_deploy, dict())

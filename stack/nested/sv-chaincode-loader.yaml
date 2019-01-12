@@ -32,14 +32,15 @@ Resources:
         - Name: membership
           Type: deploy
           Output: MembershipAddr
-#        - Name: membership-add-admin
-#          Type: calltx
-#          Function: $membership.addAdmin
-#          Inputs: [ @service:members ]
+        - Name: membership-add-admin
+          Type: calltx
+          Function: $membership.addAdmin
+          Inputs: [ _members ]
         - Name: bblib-v7
           Type: deploy
         - Libraries:
             __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
+            asdf: asdf8768
           Name: bbfarm
           Type: deploy
           Output: BBFarmAddr
@@ -86,10 +87,10 @@ Resources:
           ReturnTypes: [ 'bytes32' ]
           Type: call
           Output: DemocHash
-#        - Name: add-membership-admin
-
-
-
+        - Name: democ-add-admin
+          Type: calltx
+          Function: $sv-index.setDEditor
+          Inputs: [ $democ-hash, _members, 'bool:true' ]
 
 
   rChaincodeLambda:
@@ -122,8 +123,8 @@ Resources:
 Outputs:
   oMembershipAddr:
     Value: !GetAtt rChaincodeCr.MembershipAddr
-#  oDemocHash:
-#    Value: !GetAtt rChaincodeCr.DemocHash
+  oDemocHash:
+    Value: !GetAtt rChaincodeCr.DemocHash
   oMkDemocTxid:
     Value: !GetAtt rChaincodeCr.MkDemocTxid
   oIndexAddr:

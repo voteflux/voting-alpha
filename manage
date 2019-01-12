@@ -236,7 +236,15 @@ def docker_lambda(cmd, extra_args=''):
     if wsl:
         print("Detected WSL...")
     mnt_dir = '$PWD' if not wsl else '$(wslpath -w $PWD)'
-    return f'docker run --rm -t -v "{mnt_dir}":/var/task {extra_args} lambci/lambda:build-python3.6 {cmd}'
+    # sts = boto3.client('sts')
+    # session_token = sts.get_session_token(DurationSeconds=900)['Credentials']
+    # env_args = ' '.join([f"-e {k}={v}" for k,v in {
+    #     'AWS_ACCESS_KEY_ID': session_token['AccessKeyId'],
+    #     'AWS_SESSION_TOKEN': session_token['SessionToken'],
+    #     'AWS_SECRET_ACCESS_KEY': session_token['SecretAccessKey'],
+    # }.items()])
+    env_args = ''
+    return os.system(f'docker run --rm -t -v "{mnt_dir}":/var/task {env_args} {extra_args} lambci/lambda:build-python3.6 {cmd}')
 
 
 @click.group()
@@ -290,8 +298,7 @@ def pip_install(pkgs, no_system, pip_args):
             _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
             system = ''
         # _cmd = _cmd_outer.format(...origcmd here...)
-        _cmd = docker_lambda(f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}')
-        _ec = os.system(_cmd)
+        _ec = docker_lambda(f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}')
 
         if _ec != 0:
             raise Exception("Failed to install packages")
@@ -303,7 +310,7 @@ def pip_install(pkgs, no_system, pip_args):
 @cli.command(name='test-chaincode')
 def test_chaincode():
     test_cmd = 'bash -c "cd stack/cr/chaincode; ls -al && tail cfnwrapper.py && tail lib.py; python3 test/test_mk_contract.py"'
-    os.system(docker_lambda(test_cmd))
+    docker_lambda(test_cmd)
 
 
 @cli.command(name="stream-cfn")
@@ -386,11 +393,11 @@ def deploy_macros(stack_name):
     stream_cfn_events(stack_name, heading_prefix="DEPLOY")
 
 
-@cli.command(name='test-destroy')
+@cli.command(name='destroy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
 @click.pass_context
-def test_destroy(ctx, watch, stack_name):
+def destroy(ctx, watch, stack_name):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -405,9 +412,9 @@ def test_destroy(ctx, watch, stack_name):
 
     print_output(f"Deleted: {del_resp}")
 
-@cli.command(name='test-deploy')
+@cli.command(name='deploy')
 @click.argument('stack-name', type=click.STRING, default='')
-@click.option("--deploy/--no-deploy", default=False)
+@click.option("--deploy/--no-deploy", default=True)
 @click.option("--open-browser/--no-open-browser", default=False)
 @click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True,
               help="Remove tmp-stack.yaml after we're done generating + uploading it")
@@ -419,7 +426,7 @@ def test_destroy(ctx, watch, stack_name):
 @click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
 @click.pass_context
-def test_deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
+def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
                 use_last_uploaded):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
