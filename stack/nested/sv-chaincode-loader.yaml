@@ -32,19 +32,25 @@ Resources:
         - Name: membership
           Type: deploy
           Output: MembershipAddr
+#        - Name: membership-add-admin
+#          Type: calltx
+#          Function: $membership.addAdmin
+#          Inputs: [ @ssm-addr ]
         - Name: bblib-v7
           Type: deploy
         - Libraries:
             __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
           Name: bbfarm
           Type: deploy
-          Output: BBFarm
+          Output: BBFarmAddr
         - Name: sv-backend
           Type: deploy
+          Output: BackendAddr
         - Inputs:
             - ^self
           Name: sv-payments
           Type: deploy
+          Output: PaymentsAddr
         - Name: sv-comm-auction
           Type: deploy
         - Inputs:
@@ -55,7 +61,7 @@ Resources:
             - $sv-comm-auction
           Name: sv-index
           Type: deploy
-          Output: SvIndex
+          Output: IndexAddr
         - Name: ix-backend-perms
           Function: $sv-backend.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
@@ -68,6 +74,20 @@ Resources:
           Function: $bbfarm.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
           Type: calltx
+#        - Name: ix-mk-democ
+#          Function: $sv-index.dInit
+#          Value: 1
+#          Inputs: [ $membership, 'bool:true' ]
+#          Type: calltx
+#        - Name: democ-hash
+#          Function: $sv-backend.getGDemoc
+#          Inputs: [ 'uint256:0' ]
+#          Type: call
+#          Output: DemocHash
+#        - Name: add-membership-admin
+
+
+
 
 
   rChaincodeLambda:
@@ -97,6 +117,12 @@ Resources:
               - ssm:DescribeParameters
             Resource:
               - '*'
-#Outputs:
-#  oMembershipAddr:
-#    Value: !GetAtt rChaincodeCr.MembershipAddr
+Outputs:
+  oMembershipAddr:
+    Value: !GetAtt rChaincodeCr.MembershipAddr
+#  oDemocHash:
+#    Value: !GetAtt rChaincodeCr.DemocHash
+  oIndexAddr:
+    Value: !GetAtt rChaincodeCr.IndexAddr
+  oBBFarmAddr:
+    Value: !GetAtt rChaincodeCr.BBFarmAddr

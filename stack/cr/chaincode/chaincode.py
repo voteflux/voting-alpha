@@ -277,7 +277,8 @@ def _get_input_type(_input):
 def _varval_type_conv(ty, val):
     return {
         'bool': lambda v: str(v).lower() == 'true',
-        'address': str
+        'address': str,
+        'uint256': int,
     }[ty](val)
 
 
@@ -308,9 +309,11 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
         _inputs = []
         if len(inputs) > 0:
             abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(_input)} for (i, _input) in enumerate(inputs)]}
-            abi.update(
-                {'payable': 'true'} if 'Value' in sc_op else {'payable': 'false', "stateMutability": "nonpayable"})
+            abi.update({'payable': 'false', "stateMutability": "nonpayable"})
             tx = {'gasPrice': 1, 'gas': 7500000}
+            if 'Value' in sc_op:
+                abi.update({'payable': 'true', 'stateMutability': 'payable'})
+                tx.update({'value': sc_op['Value']})
             _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs), [varval_from_input(i) for i in inputs]))
             log.info(f'inputs to constructor/function: {_inputs}')
             # construct the abi

@@ -221,7 +221,7 @@ def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (li
 
     keys = []
     poa_pks = []
-    service_pks = []
+    service_pks = {}
     enode_pks = []
     for i in range(int(NConsensusNodes)):  # max nConsensusNodes
         (_privkey, pk) = gen_next_key()
@@ -237,7 +237,7 @@ def create_node_keys(NConsensusNodes, NamePrefix, NPublicNodes, **kwargs) -> (li
         keys.append({'Name': gen_ssm_nodekey_service(NamePrefix, eth_service),
                      'Description': "Private key for service lambda: {}".format(eth_service),
                      'Value': _privkey, 'Type': 'SecureString'})
-        service_pks.append(pk)
+        service_pks[eth_service] = pk
 
     logging.info(f"service_pks: {service_pks}")
 
@@ -340,10 +340,10 @@ def del_ssm_networkid_ethstats(NamePrefix, **props):
 
 def upload_chain_config(NamePrefix, StaticBucketName, **params):
     poa_pks = json.loads(ssm.get_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))['Parameter']['Value'])
-    service_pks = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])
+    service_pks: dict = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])
     enode_pks = json.loads(ssm.get_parameter(Name=gen_ssm_enode_pks(NamePrefix))['Parameter']['Value'])
 
-    chainspec = json.dumps(gen_chainspec_json(poa_pks, service_pks, enode_pks, NamePrefix=NamePrefix, **params))
+    chainspec = json.dumps(gen_chainspec_json(poa_pks, list(service_pks.values()), enode_pks, NamePrefix=NamePrefix, **params))
     ret = {'ChainSpecGenerated': True}
     obj_key = 'chain/chainspec.json'
     s3 = boto3.client('s3')
@@ -365,7 +365,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: 
     NetworkId = params['NetworkId']
     hex_network_id = hex(NetworkId)
 
-    INIT_BAL = "160693804425899027554196209234"
+    INIT_BAL = hex(160693804425899027554196209234)
 
     builtins = {"0000000000000000000000000000000000000001": {
         "balance": "1", "builtin": {"name": "ecrecover", "pricing": {"linear": {"base": 3000, "word": 0}}}},

@@ -73,6 +73,16 @@ def _create_acm_certificate(event, ctx):
         response = acm.list_certificates(
             CertificateStatuses=['PENDING_VALIDATION', 'ISSUED']
         )
+
+        def request_cert():
+            response = acm.request_certificate(
+                DomainName=dn,
+                ValidationMethod='DNS',
+                IdempotencyToken=event['LogicalResourceId'],
+                SubjectAlternativeNames=[san] + additional_dn,
+            )
+            return response['CertificateArn']
+
         cert_arn = None
         for cert in response['CertificateSummaryList']:
             LOG.info("existing cert: %s" % cert['DomainName'])
@@ -88,14 +98,10 @@ def _create_acm_certificate(event, ctx):
                 cert_arn = cert['CertificateArn']
                 LOG.info("Matching cert: %s" % cert_arn)
 
+        FRESH_CERT = False
         if not cert_arn:
-            response = acm.request_certificate(
-                DomainName=dn,
-                ValidationMethod='DNS',
-                IdempotencyToken=event['LogicalResourceId'],
-                SubjectAlternativeNames=[san] + additional_dn,
-            )
-            cert_arn = response['CertificateArn']
+            cert_arn = request_cert()['CertificateArn']
+            FRESH_CERT = True
 
         with Timer("ACM cert creation") as t:
             while t.curr_interval < 10:
@@ -128,6 +134,10 @@ def _create_acm_certificate(event, ctx):
             ChangeBatch={'Comment': 'Auth', 'Changes': r53_c}
         )
         LOG.info("r53 response: %s" % response)
+
+        if FRESH_CERT:
+            LOG.info(f"Fresh cert delete: {acm.delete_certificate(CertificateArn=cert_arn)})")
+            cert_arn = request_cert()['CertificateArn']
 
         cert_done = False
         cert_status = "PENDING_VALIDATION"

@@ -95,6 +95,7 @@ def wrap_handler(_handler):
             LOGGER.info('REQUEST RECEIVED:\n %s', context)
             LOGGER.info(event['RequestType'])
             resp: CrResponse = _handler(event, context, **event['ResourceProperties'])
+            signal.alarm(0)
             if type(resp) != CrResponse:
                 raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
             send_cfn_resp(event, context, resp)
@@ -106,12 +107,11 @@ def wrap_handler(_handler):
             resource_id = event.get('PhysicalResourceId',
                                     "Unknown-PhysicalResourceId-{}".format(event['LogicalResourceId'])
                                     )
+            signal.alarm(0)
             send_cfn_resp(event, context,
                           CrResponse(CfnStatus.FAILED, {
                               "Message": "Error: %s" % (repr(e),), "Traceback": tb_str
                           }, resource_id))
-        finally:
-            signal.alarm(0)
 
     return inner
 

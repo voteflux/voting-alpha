@@ -20,9 +20,9 @@ import click
 S3_DEV_BUCKET = "flux-public-assets"
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
-TEST_STACK_NAME = "testnet-alpha-stack"
-TEST_SUBDOMAIN = "testnet-alpha"
-TEST_NAMEPREFIX = "testnetalpha"
+TEST_STACK_NAME = "sv-testnet-stack"
+TEST_SUBDOMAIN = "tnalpha"
+TEST_NAMEPREFIX = "tnalpha"
 OFFSET = ""
 
 MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
@@ -386,6 +386,25 @@ def deploy_macros(stack_name):
     stream_cfn_events(stack_name, heading_prefix="DEPLOY")
 
 
+@cli.command(name='test-destroy')
+@click.argument('stack-name', type=click.STRING, default='')
+@click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
+@click.pass_context
+def test_destroy(ctx, watch, stack_name):
+    if stack_name == '':
+        stack_name = TEST_STACK_NAME
+
+    if watch:
+        stream_cfn_events(stack_name, heading_prefix="AWAIT")
+
+    del_resp = cfn.delete_stack(StackName=stack_name)
+    print(f"Del response: {del_resp}")
+
+    if watch:
+        stream_cfn_events(stack_name, heading_prefix="DELETE")
+
+    print_output(f"Deleted: {del_resp}")
+
 @cli.command(name='test-deploy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=False)
@@ -400,7 +419,7 @@ def deploy_macros(stack_name):
 @click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
 @click.pass_context
-def test_deploy(ctx, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, stack_name, use_existing,
+def test_deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
                 use_last_uploaded):
     if stack_name == '':
         stack_name = TEST_STACK_NAME

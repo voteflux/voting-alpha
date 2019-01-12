@@ -37,7 +37,7 @@ Resources:
         pDomain: !Ref pDomain
         pSubdomain: !Ref pSubdomain
         pNodeType: 'consensus'
-        pVolumeSize: 50
+        pVolumeSize: 25
         pLaunchScript: !Sub |
           sudo amazon-linux-extras install docker
           sudo service docker start
@@ -57,6 +57,7 @@ Resources:
               --jsonrpc-apis=web3,net,eth,parity_accounts,parity \
               --jsonrpc-interface=local
           res=$?
+          sleep 1
           docker logs parity-tmp
           set +x
           ACCOUNT_SECRET=$(aws ssm get-parameter --name sv-${pNamePrefix}-nodekey-consensus-${pNodeNumber} --region ${AWS::Region} --with-decryption --query Parameter.Value --output text)
@@ -80,7 +81,7 @@ Resources:
               --min-gas-price=1
           res2=$?
           WAIT_TIME=0
-          until curl -m 1 "http://localhost:8545/" || [ $WAIT_TIME -eq 15 ]; do sleep $(( WAIT_TIME++ )); echo "waited $WAIT_TIME for HTTP"; done
+          until curl -m 1 "http://localhost:8545/" || [ $WAIT_TIME -eq 4 ]; do sleep $(( WAIT_TIME++ )); echo "waited $WAIT_TIME for HTTP"; done
           CURL_OUT=$(curl "http://localhost:8545/")
           CURL_EXIT=$?
           if [[ "$CURL_EXIT" != "0" ]]; then echo 'curl never completed...'; fi

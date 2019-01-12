@@ -570,6 +570,7 @@ Resources:
     DependsOn:
       - rPublicNode0
       - rConsensusNode0
+      - rEthPrivkeysCr
     Properties:
       TemplateURL: ./nested/sv-chaincode-loader.yaml
       TimeoutInMinutes: !Ref pChaincodeTimeout
