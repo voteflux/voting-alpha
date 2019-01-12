@@ -80,12 +80,12 @@ Resources:
           Inputs: [ $membership, 'bool:true' ]
           Type: calltx
           Output: MkDemocTxid
-#        - Name: democ-hash
-#          Function: $sv-backend.getGDemoc
-#          Inputs: [ 'uint256:0' ]
-#          ReturnTypes: [ bytes32 ]
-#          Type: call
-#          Output: DemocHash
+        - Name: democ-hash
+          Function: $sv-backend.getGDemoc
+          Inputs: [ 'uint256:0' ]
+          ReturnTypes: [ 'bytes32' ]
+          Type: call
+          Output: DemocHash
 #        - Name: add-membership-admin
 
 

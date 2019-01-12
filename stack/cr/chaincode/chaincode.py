@@ -387,7 +387,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
         ssm_send = gen_ssm_send(name_prefix, entry_name)  # ssm param name to store txid of send ops
         ssm_inputs = gen_ssm_inputs(name_prefix, entry_name)  # ssm param name to store inputs
 
-        def relies_only_on_cached():
+        def relies_only_on_cached(_prevs):
             # currently the only dependant outputs possible are addresses; TODO: add output values from function calls
             to_check = [x for x in (inputs + list(libs.values())) if _varval_is_addr_pointer(x)]
             for i in to_check:
@@ -399,7 +399,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             try:
                 cached_inputs = get_ssm_param_no_enc(ssm_inputs, decode_json=True)
                 for (a, b) in zip(inputs, cached_inputs):
-                    if resolve_var_val(a) != b:
+                    if resolve_var_val(acct, _prevs, a) != b:
                         log.info(f"not cached as {a} != {b} for inputs: {inputs}, (cached:) {cached_inputs}")
                         return False
             except Exception as e:
@@ -410,7 +410,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
         def deploy(_prevs, _next):
             nonlocal nonce
             if not dry_run and ssm_param_exists(ssm_deploy) and ssm_param_exists(
-                    ssm_inputs) and relies_only_on_cached():
+                    ssm_inputs) and relies_only_on_cached(_prevs):
                 # we don't want to deploy
                 log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached ops.")
                 return Contract(entry_name, '', ssm_deploy, ssm_inputs, addr=get_ssm_param_no_enc(ssm_deploy),
@@ -446,7 +446,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
         def calltx(_prevs, _next):
             nonlocal nonce
             if not dry_run and ssm_param_exists(ssm_calltx) and ssm_param_exists(
-                    ssm_inputs) and relies_only_on_cached():
+                    ssm_inputs) and relies_only_on_cached(_prevs):
                 # we don't want to make tx
                 log.info(f"Skipping tx {entry_name} as it is cached and relies only on cached ops.")
                 return CallTxResult(entry_name, _next['Function'], get_ssm_param_no_enc(ssm_calltx),
@@ -472,7 +472,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             return CallTxResult(entry_name, _next['Function'], tx_id.hex(), inputs=_inputs, op=_next)
 
         def call(_prevs, _next):
-            if not dry_run and ssm_param_exists(ssm_call) and ssm_param_exists(ssm_inputs) and relies_only_on_cached():
+            if not dry_run and ssm_param_exists(ssm_call) and ssm_param_exists(ssm_inputs) and relies_only_on_cached(_prevs):
                 log.info(f"skipping {entry_name} - cached")
                 return CallResult(entry_name, _next['Function'], get_ssm_param_no_enc(ssm_inputs, decode_json=True),
                                   get_ssm_param_no_enc(ssm_call, decode_json=True), cached=True, op=_next)
