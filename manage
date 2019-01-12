@@ -17,7 +17,7 @@ from boto3.s3.transfer import S3Transfer
 
 import click
 
-S3_DEV_BUCKET = "flux-scratch"
+S3_DEV_BUCKET = "flux-public-assets"
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "testnet-alpha-stack"
@@ -227,6 +227,18 @@ def dict_to_cfn_params(params):
     return [{'ParameterKey': k, 'ParameterValue': v} for k, v in params.items()]
 
 
+def is_wsl():
+    return os.path.exists('/bin/wslpath')
+
+
+def docker_lambda(cmd, extra_args=''):
+    wsl = is_wsl()
+    if wsl:
+        print("Detected WSL...")
+    mnt_dir = '$PWD' if not wsl else '$(wslpath -w $PWD)'
+    return f'docker run --rm -t -v "{mnt_dir}":/var/task {extra_args} lambci/lambda:build-python3.6 {cmd}'
+
+
 @click.group()
 @click.option("--debug/--no-debug", default=False)
 @click.option("--offset", default="", type=click.STRING, help="use an offset for names to avoid conflicts.")
@@ -243,13 +255,14 @@ def cli(debug, offset, region):
 
 
 @cli.command(name='pip-install')
-@click.argument('target', nargs=1)
+# @click.argument('target', nargs=1)
 @click.argument('pkgs', nargs=-1)
 @click.option('--no-system', type=click.BOOL, is_flag=True, default=False,
               help="do not include --system in pip install args")
 @click.option('--pip-args', type=click.STRING, default='', help="extra args to pass to pip3 install")
-def pip_install(target, pkgs, no_system, pip_args):
+def pip_install(pkgs, no_system, pip_args):
     _pkgs = ' '.join(pkgs)
+    target = 'stack/cr/common'
     if os.path.exists(target):
         # parent_dir = os.path.dirname(target)
         # target_dir = os.path.basename(target)
@@ -276,8 +289,8 @@ def pip_install(target, pkgs, no_system, pip_args):
         if platform.system() == "Darwin":
             _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
             system = ''
-        _cmd = _cmd_outer.format(
-            f'pip3 install {system} --target=deps -r {reqs_file} --upgrade --progress-bar emoji {pip_args}')
+        # _cmd = _cmd_outer.format(...origcmd here...)
+        _cmd = docker_lambda(f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}')
         _ec = os.system(_cmd)
 
         if _ec != 0:
@@ -289,8 +302,8 @@ def pip_install(target, pkgs, no_system, pip_args):
 
 @cli.command(name='test-chaincode')
 def test_chaincode():
-    os.system(
-        f'docker run --rm -t -v "$PWD":/var/task lambci/lambda:build-python3.6 bash -c "cd stack/cr/chaincode; python3 test/test_mk_contract.py"')
+    test_cmd = 'bash -c "cd stack/cr/chaincode; ls -al && tail cfnwrapper.py && tail lib.py; python3 test/test_mk_contract.py"'
+    os.system(docker_lambda(test_cmd))
 
 
 @cli.command(name="stream-cfn")

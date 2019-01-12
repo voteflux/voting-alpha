@@ -194,11 +194,20 @@ Conditions:
 
 Resources:
 
+  rLambdaLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: ./cr/common
+      Description: layer for all/common deps for custom resources / lambdas
+      LayerName: !Sub ${NamePrefix}-common-layer
+
   rMacroStack:
     Condition: cDeployMacros
     Type: AWS::CloudFormation::Stack
     Properties:
       TemplateURL: ./sv-macros.yaml
+      Parameters:
+        pLambdaLayer: !Ref rLambdaLayer
 
   rAcmCertStack:
     Type: AWS::CloudFormation::Stack
@@ -267,6 +276,7 @@ Resources:
               Resource:
                 - !GetAtt rStaticBucket.Arn
                 - !Sub ${rStaticBucket.Arn}/*
+      Layers: [ !Ref rLambdaLayer ]
 
 #  rKms:
 #    Type: AWS::KMS::Key
@@ -370,6 +380,7 @@ Resources:
       - rNamePrefixStaticCr
       - rEthPrivkeysCr
     Properties:
+      Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
       Runtime: python3.6
       Handler: 'index.handler_params'
@@ -422,6 +433,7 @@ Resources:
   rEthPrivkeysLambda:
     Type: AWS::Serverless::Function
     Properties:
+      Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
       Runtime: python3.6
       Handler: 'index.handler_priv_keys'
@@ -453,6 +465,7 @@ Resources:
   rNamePrefixStaticLambda:
     Type: AWS::Serverless::Function
     Properties:
+      Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
       Runtime: python3.6
       Handler: 'index.handler_prevent_nameprefix_change'
@@ -566,6 +579,7 @@ Resources:
 #        pDomain: !Ref HostedZoneDomain
 #        pSubdomain: !Ref Subdomain
         pPublicNodeDomain: !GetAtt rPublicNode0.Outputs.oPublicIp
+        pLambdaLayer: !Ref rLambdaLayer
 
 #  rPublicLoadBalancer:
 #    Type: AWS::CloudFormation::Stack

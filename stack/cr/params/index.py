@@ -9,10 +9,19 @@ from enum import Enum
 
 import os, sys
 
-os.environ['PYTHONPATH'] = os.environ['PYTHONPATH'] + (':' if os.environ['PYTHONPATH'] else '') + os.path.dirname(
-    os.path.realpath(__file__)) + '/deps'
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
-print("PYTHONPATH:", os.environ['PYTHONPATH'])
+# os.environ['PYTHONPATH'] = os.environ['PYTHONPATH'] + (':' if os.environ['PYTHONPATH'] else '') + os.path.dirname(
+#     os.path.realpath(__file__)) + '/deps'
+# sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
+# print("PYTHONPATH:", os.environ['PYTHONPATH'])
+
+import bootstrap
+
+main_dir = os.path.dirname(os.path.realpath(__file__))
+sys.path.insert(0, main_dir)
+sys.path.insert(0, os.path.join(main_dir, '../common/deps'))
+sys.path.insert(0, os.path.join(main_dir, '../common'))
+sys.path.insert(0, '/opt/deps')
+sys.path.insert(0, '/opt')
 
 from lib import *
 

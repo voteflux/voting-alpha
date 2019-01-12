@@ -2,8 +2,18 @@ import functools
 import itertools
 import time
 import logging
-import os
+import os, sys
+from enum import Enum
 
+import bootstrap
+
+main_dir = os.path.dirname(os.path.dirname(__file__))
+sys.path.insert(0, main_dir)
+sys.path.insert(0, os.path.join(main_dir, '../common/deps'))
+sys.path.insert(0, os.path.join(main_dir, '../common'))
+sys.path.insert(0, '/opt/deps')
+sys.path.insert(0, '/opt')
+print(sys.path)
 
 from cfnwrapper import *
 
@@ -48,16 +58,24 @@ class OpType(Enum):
     Send = "send"
 
 
-class CallTxResult:
-    def __init__(self, name, function, txid, inputs=None, cached=False):
+class CfnOutput:
+    def mk_output_name(self):
+        if 'Output' not in self.op:
+            raise Exception(f"Cannot no `Output` specified for op: {self.op['Name']}")
+        return self.op['Output']
+
+
+class CallTxResult(CfnOutput):
+    def __init__(self, name, function, txid, inputs=None, cached=False, op=None):
         self.name = name
         self.txid = txid
         self.function = function
         self.cached = cached
         self.inputs = [] if inputs is None else inputs
+        self.op = op
 
     def mk_output(self):
-        return (f"{self.name}-Txid".title(), self.txid)
+        return self.mk_output_name(), self.txid
 
     def __str__(self):
         return f"<Contract({self.name}): [Txid:{self.txid}]>"
@@ -66,30 +84,32 @@ class CallTxResult:
         return f"<CallTxResult({self.name}): [Txid:{self.txid}, Func:{self.function}, Inputs:{self.inputs}]>"
 
 
-class CallResult:
-    def __init__(self, name, output, sc_addr, cached=False):
+class CallResult(CfnOutput):
+    def __init__(self, name, output, sc_addr, cached=False, op=None):
         self.name = name
         self.output = output
         self.sc_addr = sc_addr
         self.cached = cached
+        self.op = op
 
     def mk_output(self):
-        return (f"{self.name}-Output".title(), self.output)
+        return self.mk_output_name(), self.output
 
-class SendResult:
-    def __init__(self, name, to, value, txid, cached=False):
+class SendResult(CfnOutput):
+    def __init__(self, name, to, value, txid, cached=False, op=None):
         self.name = name
         self.to = to
         self.value = value
         self.txid = txid
         self.cached = cached
+        self.op = op
 
     def mk_output(self):
-        return (f"{self.name}-Txid".title(), self.txid)
+        return self.mk_output_name(), self.txid
 
-class Contract:
+class Contract(CfnOutput):
     def __init__(self, name, bytecode, ssm_param_name, ssm_param_inputs, addr=None, inputs=None, gas_used=None,
-                 cached=False):
+                 cached=False, op=None):
         self.name = name
         self.bytecode = bytecode
         self.addr = addr
@@ -98,18 +118,19 @@ class Contract:
         self.cached = cached
         self.ssm_param_name = ssm_param_name
         self.ssm_param_inputs = ssm_param_inputs
+        self.op = op
 
     def init_args(self):
         # matches function signature of __init__
         return [self.name, self.bytecode, self.ssm_param_name, self.ssm_param_inputs, self.addr, self.inputs,
-                self.gas_used, self.cached]
+                self.gas_used, self.cached, self.op]
 
     def mk_output(self):
-        return (f"{self.name}-Addr".title(), self.addr)
+        return self.mk_output_name(), self.addr
 
     def ssm_names(self, name_prefix):
         # return (gen_ssm_sc_addr(name_prefix, self.name), gen_ssm_sc_inputs(name_prefix, self.name))
-        return (self.ssm_param_name, self.ssm_param_inputs)
+        return self.ssm_param_name, self.ssm_param_inputs
 
     def set_addr(self, addr):
         self.addr = addr
@@ -362,7 +383,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
                 # we don't want to deploy
                 log.info(f"Skipping deploy of {entry_name} as it is cached and relies only on cached ops.")
                 return Contract(entry_name, '', ssm_deploy, ssm_inputs, addr=get_ssm_param_no_enc(ssm_deploy),
-                                inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True)
+                                inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True, op=_next)
 
             log.info(f"Deploying {entry_name} - not cached.")
             if 'URL' in _next:
@@ -375,21 +396,21 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             bc = tx['data']
             log.info(f"Processed bytecode for {entry_name}; lengths: raw({len(raw_bc)}), processed({len(bc)})")
             c_done = deploy_contract(w3, acct, chainid, nonce,
-                                     Contract(entry_name, bc, ssm_deploy, ssm_inputs, inputs=_inputs),
+                                     Contract(entry_name, bc, ssm_deploy, ssm_inputs, inputs=_inputs, op=_next),
                                      dry_run=dry_run)
             nonce += 1
             return c_done
 
-        def ssm_get_calltx():
-            return dict(map(lambda pss: (pss[0], get_ssm_param_no_enc(**pss[1])), [
-                ('calltx', [gen_ssm_calltx(name_prefix, entry_name), False]),
-                ('inputs', [gen_ssm_inputs(name_prefix, entry_name), True])
-            ]))
-
-        def ssm_set_calltx(calltx=None, inputs=None):
-            if calltx is None or inputs is None:
-                raise Exception("null inputs provided to ssm_set")
-            return dict(map(lambda pss: (pss[0], put_param_no_enc(**pss[1])), [('calltx', calltx), ('inputs', inputs)]))
+        # def ssm_get_calltx():
+        #     return dict(map(lambda pss: (pss[0], get_ssm_param_no_enc(**pss[1])), [
+        #         ('calltx', [gen_ssm_calltx(name_prefix, entry_name), False]),
+        #         ('inputs', [gen_ssm_inputs(name_prefix, entry_name), True])
+        #     ]))
+        #
+        # def ssm_set_calltx(calltx=None, inputs=None):
+        #     if calltx is None or inputs is None:
+        #         raise Exception("null inputs provided to ssm_set")
+        #     return dict(map(lambda pss: (pss[0], put_param_no_enc(**pss[1])), [('calltx', calltx), ('inputs', inputs)]))
 
         def calltx(_prevs, _next):
             nonlocal nonce
@@ -398,7 +419,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
                 # we don't want to make tx
                 log.info(f"Skipping tx {entry_name} as it is cached and relies only on cached ops.")
                 return CallTxResult(entry_name, _next['Function'], get_ssm_param_no_enc(ssm_calltx),
-                                    inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True)
+                                    inputs=get_ssm_param_no_enc(ssm_inputs, decode_json=True), cached=True, op=_next)
 
             log.info(f"CallTx: {entry_name} - not cached")
             tx, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next)
@@ -417,7 +438,7 @@ def mk_contract(name_prefix, w3, acct, chainid, nonce, dry_run=False):
             put_param_no_enc(ssm_inputs, _inputs, description=f"Inputs for {entry_name} (calltx) operation",
                              overwrite=True, encode_json=True, dry_run=dry_run)
 
-            return CallTxResult(entry_name, _next['Function'], tx_id.hex(), inputs=_inputs)
+            return CallTxResult(entry_name, _next['Function'], tx_id.hex(), inputs=_inputs, op=_next)
 
         ops = AttributeDict({
             OpType.Deploy.value: deploy,
@@ -464,7 +485,7 @@ def chaincode_handler(event, ctx, **params):
 
         log.info(f"processed_scs: {processed_scs}")
 
-        data = dict([c.mk_output() for c in processed_scs.values()])
+        data = dict([c.mk_output() for c in processed_scs.values() if 'Output' in c.op])
 
         return CrResponse(CfnStatus.SUCCESS, data=data, physical_id=physical_id)
 

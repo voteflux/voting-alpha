@@ -15,6 +15,8 @@ Parameters:
   pOffset:
     Type: String
     Default: ''
+  pLambdaLayer:
+    Type: String
 
 
 Resources:
@@ -29,13 +31,14 @@ Resources:
       pSmartContracts:
         - Name: membership
           Type: deploy
+          Output: MembershipAddr
         - Name: bblib-v7
           Type: deploy
         - Libraries:
             __./contracts/BBLib.v7.sol:BBLibV7______: $bblib-v7
-            somethingelsethatisntused: athsng!
           Name: bbfarm
           Type: deploy
+          Output: BBFarm
         - Name: sv-backend
           Type: deploy
         - Inputs:
@@ -52,6 +55,7 @@ Resources:
             - $sv-comm-auction
           Name: sv-index
           Type: deploy
+          Output: SvIndex
         - Name: ix-backend-perms
           Function: $sv-backend.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
@@ -69,6 +73,7 @@ Resources:
   rChaincodeLambda:
     Type: AWS::Serverless::Function
     Properties:
+      Layers: [ !Ref pLambdaLayer ]
       CodeUri: '../cr/chaincode'
       Runtime: python3.6
       Handler: 'chaincode.chaincode_handler'

@@ -3,8 +3,11 @@ import sys, os
 import time
 
 main_dir = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+one_up_dir = os.path.dirname(main_dir)
 sys.path.insert(0, main_dir)
 sys.path.insert(0, os.path.join(main_dir, 'deps'))
+sys.path.insert(0, os.path.join(one_up_dir, 'common/deps'))
+sys.path.insert(0, os.path.join(one_up_dir, 'common'))
 print(sys.path)
 
 import binascii

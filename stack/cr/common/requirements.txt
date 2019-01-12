@@ -1,5 +1,8 @@
 eth-account
-ecdsa
 bitcoin==1.1.39
 web3[tester]
 setuptools
+toml
+tabulate
+eth-account
+ecdsa
