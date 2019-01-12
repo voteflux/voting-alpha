@@ -600,6 +600,8 @@ Outputs:
     Value: !Sub "static.${Subdomain}.${HostedZoneDomain}"
   oCertificateArn:
     Value: !GetAtt rAcmCertStack.Outputs.oCertificateArn
+  oPublicNode0Ip:
+    Value: !GetAtt rPublicNode0.Outputs.oPublicIp
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

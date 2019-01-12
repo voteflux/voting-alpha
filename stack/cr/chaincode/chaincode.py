@@ -7,14 +7,6 @@ from enum import Enum
 
 import bootstrap
 
-main_dir = os.path.dirname(os.path.dirname(__file__))
-sys.path.insert(0, main_dir)
-sys.path.insert(0, os.path.join(main_dir, '../common/deps'))
-sys.path.insert(0, os.path.join(main_dir, '../common'))
-sys.path.insert(0, '/opt/deps')
-sys.path.insert(0, '/opt')
-print(sys.path)
-
 from cfnwrapper import *
 
 from eth_utils import remove_0x_prefix
