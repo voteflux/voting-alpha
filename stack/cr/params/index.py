@@ -3,6 +3,7 @@
 import json
 import logging
 import signal
+import time
 import traceback
 from urllib.request import build_opener, HTTPHandler, Request
 from enum import Enum
@@ -65,12 +66,16 @@ def wrap_handler(_handler):
     return inner
 
 
+def gen_nonce(**params):
+    return {'Nonce': int(time.time())}
+
 def do_create(props: dict):
     data = {}
     data.update(generate_ec2_key(**props))
     data.update(gen_eth_stats_secret(**props))
     data.update(gen_network_id(**props))
     data.update(upload_chain_config(**data, **props))
+    data.update(gen_nonce(**data, **props))
     data.update(
         {"Message": "Success: EthStats Secret, NetworkID, ChainConfig, (Optional) EC2 Key Generation"})
     return data

@@ -78,8 +78,8 @@ Resources:
   rDomainName:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneName: !Ref pDomain
-      Name: !Sub ${pNodeType}-node-${pNodeNumber}.${pSubdomain}.${pDomain}
+      HostedZoneName: !Sub ${pDomain}.
+      Name: !Sub ${pNodeType}-node-${pNodeNumber}.${pSubdomain}.${pDomain}.
       TTL: 60
       Type: A
       ResourceRecords:

@@ -90,7 +90,7 @@ Parameters:
     Type: String
   Subdomain:
     Description: The subdomain to use under the hosted zone (e.g. 'vote' will mean all domains are created under *.vote.my.tld if my.tld corresponds to the above the hosted zone)
-    Default: "voting-app"
+    Default: "secure-voting"
     Type: String
 
   NumberOfEthereumConsensusNodes:
@@ -247,8 +247,8 @@ Resources:
   rStaticBucketDomain:
     Type: AWS::Route53::RecordSet
     Properties:
-      HostedZoneName: !Ref HostedZoneDomain
-      Name: !Sub static.${Subdomain}.${HostedZoneDomain}
+      HostedZoneName: !Sub ${HostedZoneDomain}.
+      Name: !Sub static.${Subdomain}.${HostedZoneDomain}.
       TTL: '60'
       Type: TXT
       ResourceRecords:
@@ -575,12 +575,35 @@ Resources:
       TemplateURL: ./nested/sv-chaincode-loader.yaml
       TimeoutInMinutes: !Ref pChaincodeTimeout
       Parameters:
-#        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
         pNamePrefix: !Ref NamePrefix
-#        pDomain: !Ref HostedZoneDomain
-#        pSubdomain: !Ref Subdomain
         pPublicNodeDomain: !GetAtt rPublicNode0.Outputs.oPublicIp
         pLambdaLayer: !Ref rLambdaLayer
+
+
+  rApiBootstrapStack:
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: ./nested/sv-api-bootstrap.yaml
+      Parameters:
+        pNamePrefix: !Ref NamePrefix
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+        pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
+
+
+  rMembersApp:
+    Type: AWS::Serverless::Application
+    Properties:
+      Location: ./nested/sv-members-app.yaml
+      Parameters:
+        pNamePrefix: !Ref NamePrefix
+        pApiDomainRaw: !Sub ${Subdomain}.${HostedZoneDomain}
+        pEthHost: !Sub http://${rPublicNode0.Outputs.oPublicIp}:8545
+        pMembershipContract: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
+        pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
+        pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
+        pApiStageName: svprod894834
+
 
 #  rPublicLoadBalancer:
 #    Type: AWS::CloudFormation::Stack

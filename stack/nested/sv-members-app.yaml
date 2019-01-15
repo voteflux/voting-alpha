@@ -1,0 +1,110 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+
+Parameters:
+  pNamePrefix:
+    Type: String
+
+  pMembershipContract:
+    Type: String
+
+  pApiDomainRaw:
+    Type: String
+
+  pEthHost:
+    Type: String
+
+  pCertArn:
+    Type: String
+    
+  pApiDomain:
+    Type: String
+
+  pApiStageName:
+    Type: String
+    Default: svprod
+    
+
+
+Globals:
+  Function:
+    Runtime: python3.6
+    Timeout: 180
+    Environment:
+      Variables:
+        pMembershipContract: !Ref pMembershipContract
+
+  Api:
+    EndpointConfiguration: REGIONAL
+    Cors: !Sub "'*.${pApiDomainRaw}'"
+
+
+Resources:
+#  rMembersLayer:
+#    Type: AWS::Serverless::LayerVersion
+#    Properties:
+#      LayerName: !Sub sv-${pNamePrefix}-members-layer
+#      Description: SV membership management python libs
+#      ContentUri: ../app/members/deps
+#      CompatibleRuntimes:
+#        - python3.6
+
+  rMembersOnboardFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub sv-${pNamePrefix}-members-lambda
+      CodeUri: ../app/members
+      Environment: {}
+      Handler: ./api.onboard_handler
+      Runtime: python3.6
+#      Layers:
+#        - !Ref rMembersLayer
+      Events:
+        web:
+          Type: Api
+          Properties:
+            Path: /members/onboard
+            Method: post
+            RestApiId: !Ref rMemebersOnboardApi
+
+
+  rMemebersOnboardApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      Name: !Sub sv-${pNamePrefix}-members-onboard-api
+      StageName: !Ref pApiStageName
+#      Path: '/members/onboard'
+#      Method: post
+#      Auth:
+#        CognitoAuth:
+#          UserPoolArn: !Ref pAdminUserPoolArn
+
+
+#  rMembersDeployment:
+#    Type: AWS::ApiGateway::Deployment
+#    Properties:
+#      RestApiId: !Ref rMemebersOnboardApi
+
+
+#  rMembersStage:
+#    Type: AWS::ApiGateway::Stage
+#    Properties:
+#      StageName: !Ref pApiStageName
+#      RestApiId: !Ref rMemebersOnboardApi
+#      DeploymentId: !Ref rMembersDeployment
+#
+
+  rMembersBasePath:
+    Type: AWS::ApiGateway::BasePathMapping
+    Properties:
+      BasePath: members
+      DomainName: !Ref pApiDomain
+      RestApiId: !Ref rMemebersOnboardApi
+      Stage: !Ref pApiStageName
+
+
+Outputs:
+#  oMembersLayer:
+#    Value: !Ref rMembersLayer
+  oMembersOnboardFunction:
+    Value: !Ref rMembersOnboardFunction

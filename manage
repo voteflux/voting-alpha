@@ -121,23 +121,25 @@ def stack_del_if_necessary(stack_name):
 
 
 def create_stack(stack_name, obj_url, params_aws):
+    extra = {} if params_aws is None else {'Parameters': params_aws}
     r = cfn.create_stack(
         StackName=stack_name,
         TemplateURL=obj_url,
-        Parameters=params_aws,
         Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
         OnFailure="DELETE",
-        TimeoutInMinutes=15
+        TimeoutInMinutes=20,
+        **extra
     )
     return r['StackId']
 
 
 def update_stack(stack_name, obj_url, params_aws):
+    extra = {} if params_aws is None else {'Parameters': params_aws}
     r = cfn.update_stack(
         StackName=stack_name,
         TemplateURL=obj_url,
-        Parameters=params_aws,
         Capabilities=['CAPABILITY_NAMED_IAM', 'CAPABILITY_AUTO_EXPAND'],
+        **extra
     )
     return r['StackId']
 
@@ -351,7 +353,8 @@ def upload_func(func_path, func_name):
 @click.argument('stack-name')
 @click.option('--params', default='',
               help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
-def deploy_nestedstack(stack_path, stack_name, params):
+@click.option('--use-prev-params', default=True, is_flag=True, help="use the previous params if --params is not defined")
+def deploy_nestedstack(stack_path, stack_name, params, use_prev_params):
     TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
     pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
     must_run(pkg_cmd, silent=True)
@@ -360,12 +363,25 @@ def deploy_nestedstack(stack_path, stack_name, params):
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
     obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
 
-    cfn_params = dict_to_cfn_params(json.loads(params) if params else {'pOffset': OFFSET})
+    if use_prev_params and not params:
+        prev_params = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]['Parameters']
+        cfn_params = [{'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True} for p in prev_params]
+        print(f"Using params: {json.dumps(cfn_params)}")
+    else:
+        json_params = json.loads(params)
+        if type(json_params) is list:
+            cfn_params = json_params
+        else:
+            cfn_params = dict_to_cfn_params(json_params if params else {'pOffset': OFFSET})
     sid = create_or_update_stack(stack_name, obj_url, cfn_params)
     logging.info(f"Stack SID: {sid}")
 
     stream_cfn_events(stack_name, heading_prefix="DEPLOY-NS-DEV")
     print_output(f"Stack deploy/create/update run for {stack_name} w sid: {sid}")
+
+    if stack_failed(stack_name):
+        msgs = ["{}: {}".format(a, b) for (a, b) in get_failed_msgs(stack_name)]
+        print_output("Deploy failed. Msgs: \n\n{}".format('\n'.join(msgs)))
 
 
 @cli.command(name='deploy-macros')
@@ -455,7 +471,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
         # 'HostedZone': 'Z2NVOFJHPZ9S2O',
-        'HostedZoneDomain': 'flux.vote.',
+        'HostedZoneDomain': 'flux.vote',
         'EC2InstanceType': 't2.small',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '2',
