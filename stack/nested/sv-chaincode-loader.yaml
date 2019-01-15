@@ -67,6 +67,12 @@ Resources:
           Function: $sv-backend.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
           Type: calltx
+        - Name: ix-mk-democ
+          Function: $sv-index.dInit
+          Value: 1
+          Inputs: [ $membership, 'bool:true' ]
+          Type: calltx
+          Output: MkDemocTxid
         - Name: ix-payments-perms
           Function: $sv-payments.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
@@ -75,12 +81,6 @@ Resources:
           Function: $bbfarm.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
           Type: calltx
-        - Name: ix-mk-democ
-          Function: $sv-index.dInit
-          Value: 1
-          Inputs: [ $membership, 'bool:true' ]
-          Type: calltx
-          Output: MkDemocTxid
         - Name: democ-hash
           Function: $sv-backend.getGDemoc
           Inputs: [ 'uint256:0' ]
@@ -131,3 +131,4 @@ Outputs:
     Value: !GetAtt rChaincodeCr.IndexAddr
   oBBFarmAddr:
     Value: !GetAtt rChaincodeCr.BBFarmAddr
+

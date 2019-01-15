@@ -92,7 +92,7 @@ def _create_acm_certificate(event, ctx):
                     cert_deets = acm.describe_certificate(CertificateArn=cert['CertificateArn'])['Certificate']
                     try:
                         _san = cert_deets['SubjectAlternativeNames']
-                        if _san[0] != additional_dn[0] or len(_san) > 2:  # if it's >2 it wasn't created by this CR
+                        if _san[1] != additional_dn[0] or len(_san) > 2:  # if it's >2 it wasn't created by this CR
                             continue
                     except:
                         continue
@@ -175,11 +175,11 @@ def _delete_acm_certificate(event):
     try:
         cert_arn = event['PhysicalResourceId']
         LOG.info(f"Previous PhysicalResourceId: {cert_arn}")
-        if cert_arn[:11] == "arn:aws:acm":
-            response = acm.delete_certificate(
-                CertificateArn=cert_arn
-            )
-            LOG.info(f"got delete response {response}")
+        # if cert_arn[:11] == "arn:aws:acm":
+        #     response = acm.delete_certificate(
+        #         CertificateArn=cert_arn
+        #     )
+        #     LOG.info(f"got delete response {response}")
         ret['Status'] = 'SUCCESS'
     except Exception as e:
         LOG.error(f"Traceback during delete:\n{traceback.format_exc()}")

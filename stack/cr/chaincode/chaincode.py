@@ -507,8 +507,9 @@ def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
             signed_tx = acct.signTransaction(tx)
             tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
             w3.eth.waitForTransactionReceipt(tx_id)
-
-            tx_r = w3.eth.getTransactionReceipt(tx_id)
+            with Timer(f'calltx {entry_name}') as t:
+                tx_r = w3.eth.getTransactionReceipt(tx_id)
+            time.sleep(0.5)
 
             put_param_no_enc(ssm_calltx, tx_id.hex(), description=f"TXID for {entry_name} (calltx) operation",
                              overwrite=True, dry_run=dry_run)

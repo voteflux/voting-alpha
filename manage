@@ -21,7 +21,7 @@ S3_DEV_BUCKET = "flux-public-assets"
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "sv-testnet-stack"
-TEST_SUBDOMAIN = "tnalpha"
+TEST_SUBDOMAIN = "tnalpha2"
 TEST_NAMEPREFIX = "tnalpha"
 OFFSET = ""
 
