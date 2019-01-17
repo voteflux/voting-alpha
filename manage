@@ -264,22 +264,25 @@ def cli(debug, offset, region):
     cfn = boto3.client('cloudformation', **cfn_extras)
 
 
-@cli.command(name='pip-install')
-# @click.argument('target', nargs=1)
+py_targets = click.Choice(["cr", "members", "app"])
+
+
+@cli.command(name='pip')
+@click.argument('target', nargs=1, type=py_targets)
 @click.argument('pkgs', nargs=-1)
 @click.option('--no-system', type=click.BOOL, is_flag=True, default=False,
               help="do not include --system in pip install args")
 @click.option('--pip-args', type=click.STRING, default='', help="extra args to pass to pip3 install")
-def pip_install(pkgs, no_system, pip_args):
+def pip(target, pkgs, no_system, pip_args):
     _pkgs = ' '.join(pkgs)
-    target = 'stack/cr/common'
-    if os.path.exists(target):
+    target_path = {'cr': 'stack/cr/common', 'members': 'stack/app/members', 'app': 'stack/app/common'}[target]
+    if os.path.exists(target_path):
         # parent_dir = os.path.dirname(target)
         # target_dir = os.path.basename(target)
         # os.chdir(parent_dir)
         # reqs_file = os.path.join(target_dir, 'requirements.txt')
         reqs_file = 'requirements.txt'
-        os.chdir(target)
+        os.chdir(target_path)
         try:
             with open(reqs_file, 'r') as f:
                 reqs_old = f.read().split('\n')
@@ -304,9 +307,9 @@ def pip_install(pkgs, no_system, pip_args):
 
         if _ec != 0:
             raise Exception("Failed to install packages")
-        print_output(f"Installed packages {pkgs} / {reqs} to {target}")
+        print_output(f"Installed packages {pkgs} / {reqs} to {target_path}")
     else:
-        raise Exception("Target of {} is unknown".format(target))
+        raise Exception("Target of {} is unknown".format(target_path))
 
 
 @cli.command(name='test-chaincode')

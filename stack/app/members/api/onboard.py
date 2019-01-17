@@ -1,6 +1,5 @@
+from common import mk_logger
 
-
-from .lib import mk_logger
 
 log = mk_logger('members-onboard')
 
