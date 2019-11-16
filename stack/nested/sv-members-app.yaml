@@ -40,14 +40,14 @@ Globals:
 
 
 Resources:
-#  rMembersLayer:
-#    Type: AWS::Serverless::LayerVersion
-#    Properties:
-#      LayerName: !Sub sv-${pNamePrefix}-members-layer
-#      Description: SV membership management python libs
-#      ContentUri: ../app/members/deps
-#      CompatibleRuntimes:
-#        - python3.6
+  rMembersLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub sv-${pNamePrefix}-members-layer
+      Description: SV membership management python libs
+      ContentUri: ../app/members/deps
+      CompatibleRuntimes:
+        - python3.6
 
   rMembersOnboardFunction:
     Type: AWS::Serverless::Function
@@ -92,28 +92,6 @@ Resources:
       Name: !Sub sv-${pNamePrefix}-members-onboard-api
       StageName: !Ref pApiStageName
 
-
-#unk
-      # Path: '/members/onboard'
-#      Method: post
-#      Auth:
-#        CognitoAuth:
-#          UserPoolArn: !Ref pAdminUserPoolArn
-
-
-#  rMembersDeployment:
-#    Type: AWS::ApiGateway::Deployment
-#    Properties:
-#      RestApiId: !Ref rMembersOnboardApi
-
-
-#  rMembersStage:
-#    Type: AWS::ApiGateway::Stage
-#    Properties:
-#      StageName: !Ref pApiStageName
-#      RestApiId: !Ref rMembersOnboardApi
-#      DeploymentId: !Ref rMembersDeployment
-#
 
   rMembersBasePath:
     Type: AWS::ApiGateway::BasePathMapping
