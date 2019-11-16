@@ -654,6 +654,9 @@ Outputs:
   oPublicNode0Ip:
     Condition: cCreateNodes
     Value: !GetAtt rPublicNode0.Outputs.oPublicIp
+  oPublicNode0Url:
+    Condition: cCreateNodes
+    Value: !Sub 'http://rPublicNode0.Outputs.oDomainName:8545'
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

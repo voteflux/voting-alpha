@@ -5,4 +5,6 @@
   - return status and txid after receipt available
   - note: if web3 stuff in chaincode py files are useful but can't be imported, just copy paste
   - generic functionality should go in app/common - but not too difficult to refactor later
-  
+
+
+- TLS in front of public nodes
