@@ -13,6 +13,8 @@ https://flux.vote
 
 ## deps
 
+only linux supported atm
+
 `sudo apt install python3 python3-pip zip git build-essential && pip install boto3 click`
 
 To install python deps for lambdas:
@@ -37,8 +39,15 @@ run ./manage for cli commands
 
 ### Deployment Pre-reqs
 
-* `./manage deploy-macros` first
-* asdf
+* make sure you've installed python deps for lambdas as per above (works on linux; on mac you need to use docker which is currently disabled - though code is still in ./manage)
+* `./manage deploy-macros` -- run this first
+* `export OFFSET='1'` -- this is just used to allow us to create more than one stack in parallel for dev purposes
+* `./manage --offset $OFFSET deploy --watch --step 0 voting-dev`
+* `./manage --offset $OFFSET deploy --watch --use-existing --step 1 voting-dev`
+* `./manage --offset $OFFSET deploy --watch --use-existing --step 2 voting-dev`
+* `./manage --offset $OFFSET deploy --watch --use-existing --step 3 voting-dev`
+
+(--step N can be omitted for a full deploy)
 
 ## license
 

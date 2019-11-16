@@ -440,6 +440,12 @@ def destroy(ctx, watch, stack_name):
 
     print_output(f"Deleted: {del_resp}")
 
+
+def _step_to_parameters(step: int):
+    steps = [ {'pCreateNodes': 'false'}, {'pCreateChaincodeStack': 'false'}, {'pCreateMembersApp': 'false'}, {} ]
+    return steps[step]
+
+
 @cli.command(name='deploy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=True)
@@ -453,9 +459,10 @@ def destroy(ctx, watch, stack_name):
               help="use tmp-stack.yaml if it exists instead of running aws cfn package")
 @click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
+@click.option("--step", default=3, type=click.IntRange(0, 3), help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
 @click.pass_context
 def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
-                use_last_uploaded):
+                use_last_uploaded, step):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -494,6 +501,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
+    params.update(**_step_to_parameters(step))
     params_aws = dict_to_cfn_params(params)
 
     cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(
