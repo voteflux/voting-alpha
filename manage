@@ -20,14 +20,18 @@ from boto3.s3.transfer import S3Transfer
 
 import click
 
-S3_DEV_BUCKET = "flux-public-assets"
+def get_env(name, default):
+    return os.environ.get(name, default)
+
+S3_DEV_BUCKET = get_env("S3_DEV_BUCKET", "flux-public-assets")
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "sv-testnet-stack"
-TEST_SUBDOMAIN = "tnalpha2"
-TEST_NAMEPREFIX = "tnalpha"
+TEST_SUBDOMAIN = get_env("TEST_SUBDOMAIN", "tnalpha2")
+TEST_NAMEPREFIX = "sv-testnet"
 OFFSET = ""
 
+VOTING_DOMAIN = get_env("VOTING_DOMAIN", "flux.vote")
 MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
 
 
@@ -306,10 +310,12 @@ def pip(target, pkgs, no_system, pip_args):
             _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
             system = ''
         # _cmd = _cmd_outer.format(...origcmd here...)
-        _ec = docker_lambda(f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}')
+        pip_cmd = f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}'
+        # _ec = docker_lambda()
+        _ec = os.system(pip_cmd)
 
         if _ec != 0:
-            raise Exception("Failed to install packages")
+           raise Exception("Failed to install packages")
         print_output(f"Installed packages {pkgs} / {reqs} to {target_path}")
     else:
         raise Exception("Target of {} is unknown".format(target_path))
@@ -359,8 +365,7 @@ def upload_func(func_path, func_name):
 @click.argument('stack-name')
 @click.option('--params', default='',
               help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
-@click.option('--use-prev-params', default=True, is_flag=True, help="use the previous params if --params is not defined")
-def deploy_nestedstack(stack_path, stack_name, params, use_prev_params):
+def deploy_nestedstack(stack_path, stack_name, params):
     TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
     pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
     must_run(pkg_cmd, silent=True)
@@ -369,7 +374,7 @@ def deploy_nestedstack(stack_path, stack_name, params, use_prev_params):
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
     obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
 
-    if use_prev_params and not params:
+    if not params:
         prev_params = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]['Parameters']
         cfn_params = [{'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True} for p in prev_params]
         print(f"Using params: {json.dumps(cfn_params)}")
@@ -434,6 +439,12 @@ def destroy(ctx, watch, stack_name):
 
     print_output(f"Deleted: {del_resp}")
 
+
+def _step_to_parameters(step: int):
+    steps = [ {'pCreateNodes': 'false'}, {'pCreateChaincodeStack': 'false'}, {'pCreateMembersApp': 'false'}, {} ]
+    return steps[step]
+
+
 @cli.command(name='deploy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--deploy/--no-deploy", default=True)
@@ -447,9 +458,10 @@ def destroy(ctx, watch, stack_name):
               help="use tmp-stack.yaml if it exists instead of running aws cfn package")
 @click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
+@click.option("--step", default=3, type=click.IntRange(0, 3), help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
 @click.pass_context
 def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
-                use_last_uploaded):
+                use_last_uploaded, step):
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -477,7 +489,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
         # 'HostedZone': 'Z2NVOFJHPZ9S2O',
-        'HostedZoneDomain': 'flux.vote',
+        'HostedZoneDomain': VOTING_DOMAIN,
         'EC2InstanceType': 't2.small',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '2',
@@ -488,6 +500,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
+    params.update(**_step_to_parameters(step))
     params_aws = dict_to_cfn_params(params)
 
     cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(

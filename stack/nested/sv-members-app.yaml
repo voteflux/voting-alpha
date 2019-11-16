@@ -23,6 +23,9 @@ Parameters:
   pApiStageName:
     Type: String
     Default: svprod
+
+  pLambdaLayer:
+    Type: String
     
 
 
@@ -40,71 +43,69 @@ Globals:
 
 
 Resources:
-#  rMembersLayer:
-#    Type: AWS::Serverless::LayerVersion
-#    Properties:
-#      LayerName: !Sub sv-${pNamePrefix}-members-layer
-#      Description: SV membership management python libs
-#      ContentUri: ../app/members/deps
-#      CompatibleRuntimes:
-#        - python3.6
+  rMembersLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub sv-${pNamePrefix}-members-layer
+      Description: SV membership management python libs
+      ContentUri: ../app/members/deps
+      CompatibleRuntimes:
+        - python3.6
 
-  rMembersOnboardFunction:
+  rCommonLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      LayerName: !Sub sv-${pNamePrefix}-common-layer
+      Description: SV app lambda common python libs
+      ContentUri: ../app/common
+      CompatibleRuntimes:
+        - python3.6
+
+
+  # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
+  # and logs any arbitrary data needed for later audit
+  rAdminAddMember:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub sv-${pNamePrefix}-members-lambda
+      FunctionName: !Sub sv-${pNamePrefix}-admin-add-member
       CodeUri: ../app/members
-      Environment: {}
-      Handler: ./api.onboard_handler
+      Environment:
+        Variables:
+          ENV_VAR_TEST: 'uri://test-value'
+      Handler: api.onboard_handler
       Runtime: python3.6
-#      Layers:
-#        - !Ref rMembersLayer
+      Layers:
+        - !Ref pLambdaLayer
+        - !Ref rMembersLayer
+        - !Ref rCommonLayer
       Events:
         web:
           Type: Api
           Properties:
-            Path: /members/onboard
+            Path: /admin/add
             Method: post
-            RestApiId: !Ref rMemebersOnboardApi
+            RestApiId: !Ref rMembersOnboardApi
 
 
-  rMemebersOnboardApi:
+  rMembersOnboardApi:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub sv-${pNamePrefix}-members-onboard-api
       StageName: !Ref pApiStageName
-#      Path: '/members/onboard'
-#      Method: post
-#      Auth:
-#        CognitoAuth:
-#          UserPoolArn: !Ref pAdminUserPoolArn
 
-
-#  rMembersDeployment:
-#    Type: AWS::ApiGateway::Deployment
-#    Properties:
-#      RestApiId: !Ref rMemebersOnboardApi
-
-
-#  rMembersStage:
-#    Type: AWS::ApiGateway::Stage
-#    Properties:
-#      StageName: !Ref pApiStageName
-#      RestApiId: !Ref rMemebersOnboardApi
-#      DeploymentId: !Ref rMembersDeployment
-#
 
   rMembersBasePath:
     Type: AWS::ApiGateway::BasePathMapping
+    DependsOn: rMembersOnboardApi
     Properties:
       BasePath: members
       DomainName: !Ref pApiDomain
-      RestApiId: !Ref rMemebersOnboardApi
       Stage: !Ref pApiStageName
+      RestApiId: !Ref rMembersOnboardApi
 
 
 Outputs:
 #  oMembersLayer:
 #    Value: !Ref rMembersLayer
-  oMembersOnboardFunction:
-    Value: !Ref rMembersOnboardFunction
+  oAdminAddMemberFunction:
+    Value: !Ref rAdminAddMember

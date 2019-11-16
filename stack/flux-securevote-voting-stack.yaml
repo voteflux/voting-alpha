@@ -173,8 +173,21 @@ Parameters:
 #    Default: 'true'
   pChaincodeTimeout:
     Type: Number
-    Default: 10
-    Description: "You only need to extend this if you have incredibly complex SC syystems or need to wait for a slow/public network"
+    Default: 100
+    Description: "You only need to extend this if you have incredibly complex SC systems or need to wait for a slow/public network"
+    # originaly 10
+
+  # control stack creation events (useful for initial deployments that don't roll back everything)
+  
+  pCreateNodes:
+    Type: String
+    Default: 'true'
+  pCreateChaincodeStack:
+    Type: String
+    Default: 'true'
+  pCreateMembersApp:
+    Type: String
+    Default: 'true'
 
 
 Conditions:
@@ -190,6 +203,15 @@ Conditions:
     !Equals [ !Ref pDeployMacros, 'true' ]
 #  cDeployAcmAutovalidate:
 #    !Equals [ !Ref pDeployAcmAutovalidate, 'true' ]
+  
+  # control stack creation conditions
+
+  cCreateNodes:
+    !Equals [ !Ref pCreateNodes, 'true' ]
+  cCreateChaincodeStack:
+    !And [{ Condition: cCreateNodes }, !Equals [ !Ref pCreateChaincodeStack, 'true' ] ]
+  cCreateMembersApp:
+    !And [{ Condition: cCreateChaincodeStack }, !Equals [ !Ref pCreateMembersApp, 'true' ] ]
 
 
 Resources:
@@ -526,6 +548,7 @@ Resources:
   # todo: macro these out
   rConsensusNode0:
     Type: AWS::CloudFormation::Stack
+    Condition: cCreateNodes
     Properties:
       TemplateURL: ./nested/sv-consensus-node-new.yaml
       Parameters:
@@ -543,6 +566,7 @@ Resources:
   # todo: macro these out
   rPublicNode0:
     Type: AWS::CloudFormation::Stack
+    Condition: cCreateNodes
     Properties:
       TemplateURL: ./nested/sv-public-node-new.yaml
       Parameters:
@@ -567,6 +591,7 @@ Resources:
 
   rChaincodeStack:
     Type: AWS::CloudFormation::Stack
+    Condition: cCreateChaincodeStack
     DependsOn:
       - rPublicNode0
       - rConsensusNode0
@@ -593,6 +618,7 @@ Resources:
 
   rMembersApp:
     Type: AWS::Serverless::Application
+    Condition: cCreateMembersApp
     Properties:
       Location: ./nested/sv-members-app.yaml
       Parameters:
@@ -602,7 +628,8 @@ Resources:
         pMembershipContract: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
         pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
-        pApiStageName: svprod894834
+        pApiStageName: svprod
+        pLambdaLayer: !Ref rLambdaLayer
 
 
 #  rPublicLoadBalancer:
@@ -625,7 +652,11 @@ Outputs:
   oCertificateArn:
     Value: !GetAtt rAcmCertStack.Outputs.oCertificateArn
   oPublicNode0Ip:
+    Condition: cCreateNodes
     Value: !GetAtt rPublicNode0.Outputs.oPublicIp
+  oPublicNode0Url:
+    Condition: cCreateNodes
+    Value: !Sub 'http://rPublicNode0.Outputs.oDomainName:8545'
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:

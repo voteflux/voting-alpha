@@ -1,0 +1,10 @@
+- members lambda onboard function impl
+  - API key auth
+  - location of eth endpoint in env var (see example ref in chaincode custom resource)
+  - create transaction via web3 contract
+  - return status and txid after receipt available
+  - note: if web3 stuff in chaincode py files are useful but can't be imported, just copy paste
+  - generic functionality should go in app/common - but not too difficult to refactor later
+
+
+- TLS in front of public nodes

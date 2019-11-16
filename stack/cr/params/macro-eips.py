@@ -5,6 +5,8 @@ from collections import defaultdict
 logger = logging.getLogger()
 logger.setLevel(logging.DEBUG)
 
+import bootstrap
+
 from cfnwrapper import *
 
 

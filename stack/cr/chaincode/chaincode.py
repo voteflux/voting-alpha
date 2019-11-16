@@ -211,10 +211,10 @@ def get_chainid(name_prefix: str) -> str:
     return ssm.get_parameter(Name=gen_ssm_networkid(name_prefix))['Parameter']['Value']
 
 
-def is_tx_confirmed(w3: Web3, _tx_id) -> bool:
-    _tx_r = w3.eth.getTransactionReceipt(_tx_id)
+def wait_for_tx_confirmed(w3: Web3, _tx_id, timeout=120, poll_rate=0.1) -> bool:
+    _tx_r = w3.eth.waitForTransactionReceipt(_tx_id, timeout, poll_rate)
+    return True
     # return _tx_r is None or _tx_r.blockNumber is None
-    return _tx_r is not None
 
 
 def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init_contract: Contract,
@@ -240,8 +240,7 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
     with Timer(f"Send+Confirm contract: {c_out.name}") as t:
         tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
         log.info(f"Sent transaction; txid: {tx_id.hex()}")
-        while not is_tx_confirmed(w3, tx_id) and t.curr_interval < MAX_SEC:
-            time.sleep(0.05)
+        wait_for_tx_confirmed(w3, tx_id, timeout=MAX_SEC, poll_rate=0.1)
 
     tx_r = w3.eth.getTransactionReceipt(tx_id)
     if tx_r is None:
