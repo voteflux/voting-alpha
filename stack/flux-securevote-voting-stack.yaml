@@ -629,7 +629,7 @@ Resources:
         pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
         pApiStageName: svprod
-        # pApiStageName: !Sub ${NamePrefix}-prod
+        pLambdaLayer: !Ref rLambdaLayer
 
 
 #  rPublicLoadBalancer:

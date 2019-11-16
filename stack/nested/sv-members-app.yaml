@@ -23,6 +23,9 @@ Parameters:
   pApiStageName:
     Type: String
     Default: svprod
+
+  pLambdaLayer:
+    Type: String
     
 
 
@@ -49,40 +52,38 @@ Resources:
       CompatibleRuntimes:
         - python3.6
 
-  rMembersOnboardFunction:
-    Type: AWS::Serverless::Function
+  rCommonLayer:
+    Type: AWS::Serverless::LayerVersion
     Properties:
-      FunctionName: !Sub sv-${pNamePrefix}-members-lambda
-      CodeUri: ../app/members
-      Environment: {}
-      Handler: ./api.onboard_handler
-      Runtime: python3.6
-#      Layers:
-#        - !Ref rMembersLayer
-      Events:
-        web:
-          Type: Api
-          Properties:
-            Path: /onboard
-            Method: post
-            RestApiId: !Ref rMembersOnboardApi
+      LayerName: !Sub sv-${pNamePrefix}-common-layer
+      Description: SV app lambda common python libs
+      ContentUri: ../app/common
+      CompatibleRuntimes:
+        - python3.6
 
-  rMembersListFunction:
+
+  # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
+  # and logs any arbitrary data needed for later audit
+  rAdminAddMember:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub sv-${pNamePrefix}-list-members-lambda
+      FunctionName: !Sub sv-${pNamePrefix}-admin-add-member
       CodeUri: ../app/members
-      Environment: {}
-      Handler: ./api.list_members_handler
+      Environment:
+        Variables:
+          ENV_VAR_TEST: 'uri://test-value'
+      Handler: api.onboard_handler
       Runtime: python3.6
-#      Layers:
-#        - !Ref rMembersLayer
+      Layers:
+        - !Ref pLambdaLayer
+        - !Ref rMembersLayer
+        - !Ref rCommonLayer
       Events:
         web:
           Type: Api
           Properties:
-            Path: /list
-            Method: get
+            Path: /admin/add
+            Method: post
             RestApiId: !Ref rMembersOnboardApi
 
 
@@ -106,5 +107,5 @@ Resources:
 Outputs:
 #  oMembersLayer:
 #    Value: !Ref rMembersLayer
-  oMembersOnboardFunction:
-    Value: !Ref rMembersOnboardFunction
+  oAdminAddMemberFunction:
+    Value: !Ref rAdminAddMember
