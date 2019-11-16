@@ -20,14 +20,18 @@ from boto3.s3.transfer import S3Transfer
 
 import click
 
-S3_DEV_BUCKET = "flux-public-assets"
+def get_env(name, default):
+    return os.environ.get(name, default)
+
+S3_DEV_BUCKET = get_env("S3_DEV_BUCKET", "flux-public-assets")
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "sv-testnet-stack"
-TEST_SUBDOMAIN = "tnalpha2"
-TEST_NAMEPREFIX = "tnalpha"
+TEST_SUBDOMAIN = get_env("TEST_SUBDOMAIN", "tnalpha2")
+TEST_NAMEPREFIX = "sv-testnet-1"
 OFFSET = ""
 
+VOTING_DOMAIN = get_env("VOTING_DOMAIN", "flux.vote")
 MAXS_SSH_KEY = 'ssh-rsa AAAAB3NzaC1yc2EAAAADAQABAAABAQDCr1lcY0jTSmCARinvFJHelYGx2p+Ky0YxskSVj53ywYaLRN96w8WdN7rpCCosDQbd9KzvmKbBHHAlL8noEtARmxP4tKRvGGRyKawLLPm530CJRv4bSz03Iw2kz2V2fUWjA/RO2gNK9DCXTdDM67avv8oB/QvSobm1rSNKj6CcjTTJuQxGhJcXKrU/BZwugMIM3ELByyD6w8Jizm12JWGVgJTEIkgqgaNhmek2OLsw8+1hIC9EfhQunH9izzhEd2HoGYf3IJXlESnuRyhb7uOvOPysQDL8Hrt/Po6Wi3Lhlczy7q6wrlGQwO5/ORAfpYXGuk1lc3mTI/srgSgc38Vt'
 
 
@@ -306,10 +310,12 @@ def pip(target, pkgs, no_system, pip_args):
             _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
             system = ''
         # _cmd = _cmd_outer.format(...origcmd here...)
-        _ec = docker_lambda(f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}')
+        pip_cmd = f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}'
+        # _ec = docker_lambda()
+        _ec = os.system(pip_cmd)
 
         if _ec != 0:
-            raise Exception("Failed to install packages")
+           raise Exception("Failed to install packages")
         print_output(f"Installed packages {pkgs} / {reqs} to {target_path}")
     else:
         raise Exception("Target of {} is unknown".format(target_path))
@@ -477,7 +483,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
     params = {
         'NamePrefix': TEST_NAMEPREFIX,
         # 'HostedZone': 'Z2NVOFJHPZ9S2O',
-        'HostedZoneDomain': 'flux.vote',
+        'HostedZoneDomain': VOTING_DOMAIN,
         'EC2InstanceType': 't2.small',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '2',

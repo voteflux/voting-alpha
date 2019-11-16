@@ -4,3 +4,6 @@ node_modules
 deps
 __pycache__
 tmp*
+.in
+.out
+
