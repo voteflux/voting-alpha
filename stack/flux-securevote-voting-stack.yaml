@@ -628,7 +628,8 @@ Resources:
         pMembershipContract: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
         pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
-        pApiStageName: svprod894834
+        pApiStageName: svprod
+        # pApiStageName: !Sub ${NamePrefix}-prod
 
 
 #  rPublicLoadBalancer:

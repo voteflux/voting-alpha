@@ -365,8 +365,7 @@ def upload_func(func_path, func_name):
 @click.argument('stack-name')
 @click.option('--params', default='',
               help="(JSON Dict) Parameters to use. Default will use '{\"pOffset\": \"<value provided via --offset>\"}'")
-@click.option('--use-prev-params', default=True, is_flag=True, help="use the previous params if --params is not defined")
-def deploy_nestedstack(stack_path, stack_name, params, use_prev_params):
+def deploy_nestedstack(stack_path, stack_name, params):
     TMP_TMPL_FILE = "./tmp-nestedstack-dev.yaml"
     pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
     must_run(pkg_cmd, silent=True)
@@ -375,7 +374,7 @@ def deploy_nestedstack(stack_path, stack_name, params, use_prev_params):
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
     obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
 
-    if use_prev_params and not params:
+    if not params:
         prev_params = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]['Parameters']
         cfn_params = [{'ParameterKey': p['ParameterKey'], 'UsePreviousValue': True} for p in prev_params]
         print(f"Using params: {json.dumps(cfn_params)}")

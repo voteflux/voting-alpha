@@ -45,7 +45,7 @@ run ./manage for cli commands
 * `./manage --offset $OFFSET deploy --watch --step 0 voting-dev`
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 1 voting-dev`
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 2 voting-dev`
-* `./manage --offset $OFFSET deploy --watch --use-existing --step 3 voting-dev`
+* `./manage --offset $OFFSET deploy --watch --use-existing voting-dev`
 
 (--step N can be omitted for a full deploy)
 

@@ -63,17 +63,38 @@ Resources:
         web:
           Type: Api
           Properties:
-            Path: /members/onboard
+            Path: /onboard
             Method: post
-            RestApiId: !Ref rMemebersOnboardApi
+            RestApiId: !Ref rMembersOnboardApi
+
+  rMembersListFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub sv-${pNamePrefix}-list-members-lambda
+      CodeUri: ../app/members
+      Environment: {}
+      Handler: ./api.list_members_handler
+      Runtime: python3.6
+#      Layers:
+#        - !Ref rMembersLayer
+      Events:
+        web:
+          Type: Api
+          Properties:
+            Path: /list
+            Method: get
+            RestApiId: !Ref rMembersOnboardApi
 
 
-  rMemebersOnboardApi:
+  rMembersOnboardApi:
     Type: AWS::Serverless::Api
     Properties:
       Name: !Sub sv-${pNamePrefix}-members-onboard-api
       StageName: !Ref pApiStageName
-#      Path: '/members/onboard'
+
+
+#unk
+      # Path: '/members/onboard'
 #      Method: post
 #      Auth:
 #        CognitoAuth:
@@ -83,24 +104,25 @@ Resources:
 #  rMembersDeployment:
 #    Type: AWS::ApiGateway::Deployment
 #    Properties:
-#      RestApiId: !Ref rMemebersOnboardApi
+#      RestApiId: !Ref rMembersOnboardApi
 
 
 #  rMembersStage:
 #    Type: AWS::ApiGateway::Stage
 #    Properties:
 #      StageName: !Ref pApiStageName
-#      RestApiId: !Ref rMemebersOnboardApi
+#      RestApiId: !Ref rMembersOnboardApi
 #      DeploymentId: !Ref rMembersDeployment
 #
 
   rMembersBasePath:
     Type: AWS::ApiGateway::BasePathMapping
+    DependsOn: rMembersOnboardApi
     Properties:
       BasePath: members
       DomainName: !Ref pApiDomain
-      RestApiId: !Ref rMemebersOnboardApi
       Stage: !Ref pApiStageName
+      RestApiId: !Ref rMembersOnboardApi
 
 
 Outputs:
