@@ -37,7 +37,8 @@ run ./manage for cli commands
 
 ### Deployment Pre-reqs
 
-* `./manage deploy-ns 
+* `./manage deploy-macros` first
+* asdf
 
 ## license
 

@@ -28,7 +28,7 @@ STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "sv-testnet-stack"
 TEST_SUBDOMAIN = get_env("TEST_SUBDOMAIN", "tnalpha2")
-TEST_NAMEPREFIX = "sv-testnet-1"
+TEST_NAMEPREFIX = "sv-testnet"
 OFFSET = ""
 
 VOTING_DOMAIN = get_env("VOTING_DOMAIN", "flux.vote")

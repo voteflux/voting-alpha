@@ -4,8 +4,20 @@ Transform: AWS::Serverless-2016-10-31
 Parameters:
   pLambdaLayer:
     Type: String
+    Default: ''
+
+Conditions:
+  cDeployLayer: !Equals [!Ref pLambdaLayer, '']
 
 Resources:
+  rLambdaLayer:
+    Type: AWS::Serverless::LayerVersion
+    Condition: cDeployLayer
+    Properties:
+      ContentUri: ./cr/common
+      Description: layer for all/common deps for custom resources / lambdas
+      LayerName: sv-macros-common-layer
+
   rEipMacro:
     Type: AWS::CloudFormation::Macro
     Properties:
@@ -22,7 +34,7 @@ Resources:
       Handler: 'macro-eips.macro'
       FunctionName: !Sub sv-macro-eips
       Timeout: 30
-      Layers: [ !Ref pLambdaLayer ]
+      Layers: [ !If [ cDeployLayer, !Ref rLambdaLayer, !Ref pLambdaLayer ] ]
 
   rMacroExeLogRole:
     Type: AWS::IAM::Role
