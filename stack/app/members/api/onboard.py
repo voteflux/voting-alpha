@@ -1,14 +1,9 @@
-import bootstrap
+import web3
 
-# from common.lib import mk_logger
+from .bootstrap import *
+from common.lib import mk_logger
 
-
-#log = mk_logger('members-onboard')
-
-class log:
-    @staticmethod
-    def info(str):
-        print('LOG INFO >>', str)
+log = mk_logger('members-onboard')
 
 
 def onboard_handler(event, ctx):
