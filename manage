@@ -393,7 +393,7 @@ py_targets = click.Choice(py_targets_raw + ['all'])
               help="use the lambda-build docker container to install dependencies (required on MacOS and Windows")
 def pip(target, pkgs, no_system, pip_args, use_docker):
     targets = py_targets_raw if target == "all" else [target]
-    _pkgs = ' '.join(pkgs)
+    _pkgs = list(pkgs)
     target_paths = [{'cr': 'stack/cr/common', 'members': 'stack/app/members', 'app': 'stack/app/common'}[target] for target in targets]
     for target_path in target_paths:
         _pip(target_path, _pkgs, no_system, pip_args, use_docker)
@@ -413,7 +413,7 @@ def _pip(target_path, pkgs, no_system, pip_args, use_docker):
             if pkg in reqs_old:
                 continue
             reqs.append(pkg)
-        print('New requirements:', reqs)
+        print('New requirements file lines:', reqs)
         with open(reqs_file, 'w+') as f:
             f.write('\n'.join(reqs))
         print('Platform:', platform.system())

@@ -46,7 +46,7 @@ Resources:
   rMembersLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: !Sub sv-${pNamePrefix}-members-layer
+      LayerName: !Sub ${pNamePrefix}-members-layer
       Description: SV membership management python libs
       ContentUri: ../app/members/deps
       CompatibleRuntimes:
@@ -55,7 +55,7 @@ Resources:
   rCommonLayer:
     Type: AWS::Serverless::LayerVersion
     Properties:
-      LayerName: !Sub sv-${pNamePrefix}-common-layer
+      LayerName: !Sub ${pNamePrefix}-common-layer
       Description: SV app lambda common python libs
       ContentUri: ../app/common
       CompatibleRuntimes:
@@ -67,7 +67,7 @@ Resources:
   rAdminAddMember:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub sv-${pNamePrefix}-admin-add-member
+      FunctionName: !Sub ${pNamePrefix}-admin-add-member
       CodeUri: ../app/members
       Environment:
         Variables:
@@ -76,8 +76,8 @@ Resources:
       Runtime: python3.6
       Layers:
         - !Ref pLambdaLayer
-        - !Ref rMembersLayer
-        - !Ref rCommonLayer
+        # - !Ref rMembersLayer
+        # - !Ref rCommonLayer
       Events:
         web:
           Type: Api
@@ -90,7 +90,7 @@ Resources:
   rMembersOnboardApi:
     Type: AWS::Serverless::Api
     Properties:
-      Name: !Sub sv-${pNamePrefix}-members-onboard-api
+      Name: !Sub ${pNamePrefix}-members-onboard-api
       StageName: !Ref pApiStageName
 
 

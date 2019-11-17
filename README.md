@@ -59,6 +59,16 @@ See `.in.sample`. (zsh-autoenv will automatically source `.in` and `.out` files 
 * `cnf-lint stack/**/*.yaml` -- cfn-lint is installed as a python dep (and github action)
 * `./manage deploy-ns [path/to/template.yaml] [stack_name]` will deploy a nested stack only (useful when testing stacks that are late in the CFN deployment process)
 
+### Adding pypi packages to lambda functions
+
+The target you specify must be one of:
+
+* `cr` -- installs in `stack/cr/common`
+* `members` -- `stack/app/members`
+* `app` -- `stack/app/common`
+
+Run `./manage pip TARGET pkg1 pkg2 pkg3 ...` - this will install dependencies and update requirements.txt
+
 ## license
 
 Deciding on the default license for the repo is a WIP. Some files are licensed under apache (inherited from AWS templates I've altered). Suggestions welcome. See issue #1
