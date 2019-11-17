@@ -13,25 +13,31 @@ https://flux.vote
 
 ## deps
 
-only linux supported atm
+> **Note:** only linux supported atm
 
-`sudo apt install python3 python3-pip zip git build-essential && pip install boto3 click`
+### system
 
-To install python deps for lambdas:
+* Ubuntu deps: `sudo apt install python3 python3-pip zip git build-essential`
+* [Recommended]: Install [pyenv](https://github.com/pyenv/pyenv) and [pyenv-virtualenv](https://github.com/pyenv/pyenv-virtualenv)
+* [Recommended]: Docker
 
-```bash
-for pkg in cr members app; do
-   ./manage pip $pkg;
-done
-```
+### local repo
+
+* `pyenv install -s` -- installs python matching `.python-version` if it isn't installed. (If there's any trouble with the .python-version in the repo, run `pyenv install 3.6.9`)
+* `pyenv virtualenv venv-voting-alpha`
+* If you don't have pyenv-virtualenv shell integration then you'll need to activate the venv yourself / manually. Shell integration does this automagically.
+* Python deps (for `./manage`): `pip install -r requirements.txt`
+* To install python deps for lambdas: `./manage pip all`
 
 ## manager
 
 > **WARNING:** The `./manage` util will use your default AWS .credentials or AWS_PROFILE if present. You'll also need `export AWS_DEFAULT_REGION=ap-southeast-2` if region isn't specified in your .credentials.
 
-run ./manage for cli commands
+run `./manage --help` for cli commands, or `./manage CMD --help`
 
 ### Env Vars
+
+See `.in.sample`. (zsh-autoenv will automatically source `.in` and `.out` files for you)
 
 * S3_DEV_BUCKET=<a public bucket>
 * TEST_SUBDOMAIN=<just the subdomain>
@@ -41,13 +47,11 @@ run ./manage for cli commands
 
 * make sure you've installed python deps for lambdas as per above (works on linux; on mac you need to use docker which is currently disabled - though code is still in ./manage)
 * `./manage deploy-macros` -- run this first
-* `export OFFSET='1'` -- this is just used to allow us to create more than one stack in parallel for dev purposes
-* `./manage --offset $OFFSET deploy --watch --step 0 voting-dev`
+* `export OFFSET='1'` -- this is just used to allow us to create more than one stack in parallel for dev purposes (by changing offset)
+* `./manage --offset $OFFSET deploy --watch --step 0 voting-dev` -- the `--step N` param allows us to incrementally deploy, which is useful for testing and getting the stack to a state that makes subsequent deployments faster.
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 1 voting-dev`
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 2 voting-dev`
-* `./manage --offset $OFFSET deploy --watch --use-existing voting-dev`
-
-(--step N can be omitted for a full deploy)
+* `./manage --offset $OFFSET deploy --watch --use-existing voting-dev` -- `--step N` can be omitted for a full deploy; at the time of writing there are only 3 steps available.
 
 ## license
 

@@ -1,0 +1,11 @@
+export AWS_DEFAULT_REGION=ap-southeast-2
+# export AWS_PROFILE=my-profile-name
+
+# change this to a new name that isn't taken - will be automatically created
+export S3_DEV_BUCKET=flux-public-assets
+
+# set this to whatever you want
+export TEST_SUBDOMAIN=testnet
+
+# set this to a domain matching a hosted zone you have already set up in route53
+export VOTING_DOMAIN=beta.flx.dev
