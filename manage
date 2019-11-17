@@ -9,6 +9,11 @@ import time
 import urllib.parse
 from datetime import datetime
 
+from colorama import init, Fore, Back, Style
+init()
+
+from blessings import Terminal
+
 logging.basicConfig(level=logging.INFO)
 
 from time import sleep
@@ -235,6 +240,38 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
     return resources, res_ord, update_start
 
 
+def get_c(cs, name: str) -> str:
+    n_split = name.split('_')
+    name = name if len(n_split) <= 1 else f"LIGHT{n_split[1].upper()}_EX"
+    return cs.__getattribute__(name.upper())
+
+
+def colors(fore='reset', back='reset'):
+    def mk_colorful(str):
+        return get_c(Fore, fore) + get_c(Back, back) + str + Fore.RESET + Back.RESET
+    return mk_colorful
+
+
+def fmt_r(r, _r):
+    rs = r.split('/')
+    rs[-1] = colors('l_blue')(rs[-1])
+    status_map = {
+        "DELETE_FAILED": colors('black', 'red'),
+        "DELETE_IN_PROGRESS": colors('red', 'black'),
+        "DELETE_COMPLETE": colors('l_red', 'black'),
+
+        "CREATE_FAILED": colors('red'),
+        "CREATE_IN_PROGRESS": colors('l_green'),
+        "CREATE_COMPLETE": colors('green'),
+
+        "UPDATE_FAILED": colors('red'),
+        "UPDATE_IN_PROGRESS": colors('l_green'),
+        "UPDATE_COMPLETE": colors('green'),
+    }
+    status = status_map.get(_r['status'], colors())(_r['status'])
+    return f"{status} - {'/'.join(rs)}"
+
+
 def stream_cfn_events(stack_name, heading_prefix=None):
     # echo(json.dumps(_cfn_stack_extract_resources_status(stack_name, recursive=True), indent=2))
     # return
@@ -242,12 +279,18 @@ def stream_cfn_events(stack_name, heading_prefix=None):
 
     _e = None
 
-    def _run(stdscr):
+    term = Terminal()
+    print(term.clear())
+
+    def _run():
         nonlocal _e
-        stdscr.border()
-        stdscr_height, stdscr_width = stdscr.getmaxyx()
+
+        stdscr_height, stdscr_width = term.height, term.width
         max_str_len = stdscr_width - 1
-        text_win = curses.newwin(stdscr_height - 1, stdscr_width, 1, 0)
+
+        def addstr(y, x, msg):
+            with term.location(x, y):
+                print(msg)
 
         def gen_heading():
             dt = datetime.utcnow()
@@ -264,15 +307,12 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                 3: "\\"
             }[i % 4]
 
-        curses.noecho()
-        text_win.addstr(0, 0, gen_heading())
-        text_win.refresh()
+        addstr(0, 0, gen_heading())
         loop_counter = 0
 
         try:
             while is_in_prog(stack_name):
                 loop_counter += 1
-                # echo("Stack is in progress...")
                 try:
                     resources, _resources_order, _update_start = _cfn_stack_extract_resources_status(stack_name, recursive=True)
                 except ClientError as e:
@@ -281,8 +321,8 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                         break
                     raise e
 
-                text_win.clear()
-                text_win.addstr(0, 0, gen_heading() + f" | update started: {_update_start.strftime('%H:%M:%S')}")
+                print(term.clear())
+                addstr(0, 0, gen_heading() + f" | update started: {_update_start.strftime('%H:%M:%S')}")
                 l_num = 1
                 # max_depth = max([s.count('/') for s in _resources_order])
                 # last_depth = 0
@@ -300,32 +340,30 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                             prefix += "   " * (depth-1) + (f"{start_char}──" if depth > 0 else "")
                             prefix += end_char
 
-                            the_str = f"{_r['ts']} {prefix} {_r['status']} - {r}"
-                            text_win.addstr(l_num, 0, the_str[:max_str_len])
+                            the_str = f"{_r['ts']} {prefix} {fmt_r(r, _r)}"
+                            addstr(l_num, 0, the_str)  # [:max_str_len]
                             if "FAILED" in _r['status']:
                                 l_num += 1
-                                text_win.addstr(l_num, 0, f"         {prefix} --> {_r['reason']}"[:max_str_len])
+                                addstr(l_num, 0, f"         {prefix} --> {_r['reason']}")  # [:max_str_len]
                             last_depth = depth
                         except Exception as e:
                             logging.error(f"Failed to stream status events - ({str(e)}) - console window too small?")
                             sys.exit(1)
                         l_num += 1
-                text_win.refresh()
+                while l_num < stdscr_height - 2:
+                    addstr(l_num, 0, "--")
+                    l_num += 1
                 time.sleep(2)
 
-            text_win.addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
-            text_win.refresh()
+            addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
             time.sleep(1.5)
         except Exception as e:
+            with open('__manage_log', 'a') as f:
+                f.write('\n\n'.join([time.time(), str(e), repr(e), '']))
             _e = e
-        finally:
-            curses.nocbreak()
-            stdscr.keypad(False)
-            curses.echo()
-            curses.endwin()
 
-    curses.wrapper(_run)
-    # echo(f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
+    with term.fullscreen():
+        _run()
 
     if _e is not None:
         echo(f"Error in stream events: {_e}")
