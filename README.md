@@ -29,7 +29,7 @@ https://flux.vote
 * Python deps (for `./manage`): `pip install -r requirements.txt`
 * To install python deps for lambdas: `./manage pip all`
 
-## manager
+## deploying and `./manage`
 
 > **WARNING:** The `./manage` util will use your default AWS .credentials or AWS_PROFILE if present. You'll also need `export AWS_DEFAULT_REGION=ap-southeast-2` if region isn't specified in your .credentials.
 
@@ -52,6 +52,11 @@ See `.in.sample`. (zsh-autoenv will automatically source `.in` and `.out` files 
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 1 voting-dev`
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 2 voting-dev`
 * `./manage --offset $OFFSET deploy --watch --use-existing voting-dev` -- `--step N` can be omitted for a full deploy; at the time of writing there are only 3 steps available.
+
+## Developing
+
+* `cnf-lint stack/**/*.yaml` -- cfn-lint is installed as a python dep (and github action)
+* `./manage deploy-ns [path/to/template.yaml] [stack_name]` will deploy a nested stack only (useful when testing stacks that are late in the CFN deployment process)
 
 ## license
 
