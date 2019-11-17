@@ -1,0 +1,4 @@
+templates:
+- stack/**/*.yaml
+ignore_templates:
+- stack/nested/deprecated/**/*.yaml

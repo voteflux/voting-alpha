@@ -37,7 +37,7 @@ Resources:
         pDomain: !Ref pDomain
         pSubdomain: !Ref pSubdomain
         pNodeType: 'public'
-        pVolumeSize: 150
+        pVolumeSize: '150'
         pEipAddress: !Ref pEipAddress
         pLaunchScript: !Sub |
           sudo yum install jq

@@ -80,7 +80,7 @@ Resources:
     Properties:
       HostedZoneName: !Sub ${pDomain}.
       Name: !Sub ${pNodeType}-node-${pNodeNumber}.${pSubdomain}.${pDomain}.
-      TTL: 60
+      TTL: '60'
       Type: A
       ResourceRecords:
         - !If [ cAssociateEip, !Ref pEipAddress, !GetAtt rEc2Instance.PublicIp ]

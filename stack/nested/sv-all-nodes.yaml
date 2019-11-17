@@ -43,7 +43,7 @@ Resources:
         pDomain: !Ref pDomain
         pSubdomain: !Ref pSubdomain
         pNodeType: 'consensus'
-        pVolumeSize: 50
+        pVolumeSize: '50'
         pLaunchScript: !Sub |
           sudo amazon-linux-extras install docker
           sudo service docker start

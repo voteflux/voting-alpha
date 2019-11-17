@@ -25,3 +25,5 @@ Outputs:
     Value: !Ref rEip0
   oEipAllocationIds:
     Value: !GetAtt rEip0.AllocationId
+  oIgnoreMe:
+    Value: !Join [',', [!Ref pDependsShim]]

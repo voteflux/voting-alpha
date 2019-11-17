@@ -11,7 +11,7 @@ Resources:
   rPublicSG:
     Type: AWS::EC2::SecurityGroup
     Properties:
-      GroupName: !Sub ${NamePrefix}-public-alb-sg
+      GroupName: !Sub ${pNamePrefix}-public-alb-sg
       GroupDescription: SG for ALB for publicly accessible EC2 nodes (Eth + IPFS)
       SecurityGroupIngress:
         - IpProtocol: tcp
@@ -19,18 +19,18 @@ Resources:
           ToPort: 8546
           CidrIp: 0.0.0.0/0
 
-
   rLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
     Properties:
       IpAddressType: ipv4
       LoadBalancerAttributes:
-        - LoadBalancerAttributes
+        - {}  # LoadBalancerAttributes
       Name: !Sub sv-${pNamePrefix}-public-alb
       Scheme: internet-facing
       SecurityGroups:
         - !Ref rPublicSG
       Type: application
+      Subnet: asdf
 
   rWebsocketTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
