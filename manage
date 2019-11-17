@@ -15,6 +15,7 @@ from time import sleep
 from contextlib import suppress
 from collections import defaultdict
 
+from botocore.exceptions import ClientError
 import boto3
 from boto3.s3.transfer import S3Transfer
 
@@ -44,6 +45,12 @@ def set_offset(offset):
 
 
 cfn = None
+SILENT = False
+
+
+def echo(*args, sep: str = " ", **kwargs):
+    if not SILENT:
+        click.echo(sep.join(args), **kwargs)
 
 
 def must_run(cmd, silent=False):
@@ -161,7 +168,11 @@ def create_or_update_stack(stack_name, obj_url, params):
 def get_failed_msgs(stack_name):
     evts_after = get_stack(stack_name).get('LastUpdatedTime', None)
 
-    evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+    try:
+        evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+    except:
+        logging.warning("***** Failed to get stack events! *****")
+        return []
     evts_notable = list(
         filter(lambda evt:
                ('FAILED' in evt['ResourceStatus'] or 'ROLLBACK_IN_PROGRESS' in evt['ResourceStatus']) and
@@ -176,44 +187,137 @@ def get_failed_msgs(stack_name):
     return evts_final
 
 
+def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start=None):
+    try:
+        evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
+    except ClientError as e:
+        if "does not exist" in str(e):
+            return {}, [], update_start
+        else:
+            raise e
+    resources = {}
+    _res_ord = []
+
+    # find update_start first
+    if update_start is None:
+        for evt in evts:
+            r_name = evt['LogicalResourceId']
+            is_update_create_complete = evt['ResourceStatus'] in ['UPDATE_IN_PROGRESS', 'CREATE_IN_PROGRESS',
+                                                                  'UPDATE_COMPLETE', 'CREATE_COMPLETE']
+            if update_start is None and r_name == stack_name and is_update_create_complete:
+                # just break when we get to this point since we don't want anything afterwards.
+                update_start = evt['Timestamp']
+                break
+
+    for evt in evts:
+        r_name = evt['LogicalResourceId']
+        if r_name in resources or r_name in _res_ord or r_name == stack_name:
+            continue
+        resources[r_name] = {'status': evt['ResourceStatus'],
+                             'ts': str(evt['Timestamp'].time()).split('.')[0],
+                             'reason': evt.get('ResourceStatusReason', '<MISSING>'),
+                             'type': evt.get('ResourceType', ""),
+                             'is_old': False if update_start is None else evt['Timestamp'] < update_start
+                             }
+        _res_ord.insert(0, r_name)
+        if recursive and evt['ResourceType'] == "AWS::CloudFormation::Stack" and r_name != stack_name:
+            phys_id = evt['PhysicalResourceId']
+            if phys_id != "":
+                sub_name = phys_id.split('/')[1]
+                sub_res, sub_res_ord, _meh = _cfn_stack_extract_resources_status(sub_name, recursive=recursive,
+                                                                                 update_start=update_start)
+                _res_ord = [f"{r_name}/{n}" for n in sub_res_ord] + _res_ord
+                resources.update({f"{r_name}/{k}": v for k, v in sub_res.items()})
+
+    used = set()
+    res_ord = [r for r in _res_ord if r not in used and (used.add(r) or True)]
+
+    return resources, res_ord, update_start
+
+
 def stream_cfn_events(stack_name, heading_prefix=None):
+    # echo(json.dumps(_cfn_stack_extract_resources_status(stack_name, recursive=True), indent=2))
+    # return
     import curses
 
+    _e = None
+
     def _run(stdscr):
+        nonlocal _e
         stdscr.border()
         stdscr_height, stdscr_width = stdscr.getmaxyx()
+        max_str_len = stdscr_width - 1
         text_win = curses.newwin(stdscr_height - 1, stdscr_width, 1, 0)
 
-        heading = 'CFN Status ({})'.format(stack_name)
-        if heading_prefix:
-            heading = '[{}] {}'.format(heading_prefix, heading)
+        def gen_heading():
+            dt = datetime.utcnow()
+            heading = f'CFN Status ({stack_name})'
+            if heading_prefix:
+                heading = f'[{heading_prefix}] {heading}'
+            return f'{dt.strftime("%H:%M:%S")} {heading}'
+
+        def gen_progress_rotate(i):
+            return {
+                0: "|",
+                1: "/",
+                2: "—",
+                3: "\\"
+            }[i % 4]
 
         curses.noecho()
-        text_win.addstr(0, 0, heading)
+        text_win.addstr(0, 0, gen_heading())
         text_win.refresh()
+        loop_counter = 0
 
         try:
             while is_in_prog(stack_name):
-                evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
-                resources = {}
-                _resources_order = []
-                for evt in evts[::-1]:  # start from last event
-                    resources[evt['LogicalResourceId']] = {'status': evt['ResourceStatus'], 'ts': evt['Timestamp']}
-                    _resources_order.insert(0, evt['LogicalResourceId'])
+                loop_counter += 1
+                # echo("Stack is in progress...")
+                try:
+                    resources, _resources_order, _update_start = _cfn_stack_extract_resources_status(stack_name, recursive=True)
+                except ClientError as e:
+                    if 'does not exist' in str(e):
+                        echo(f"ClientError: {str(e)}")
+                        break
+                    raise e
 
                 text_win.clear()
-                text_win.addstr(0, 0, heading)
+                text_win.addstr(0, 0, gen_heading() + f" | update started: {_update_start.strftime('%H:%M:%S')}")
                 l_num = 1
-                for r in _resources_order:
+                # max_depth = max([s.count('/') for s in _resources_order])
+                # last_depth = 0
+                for r in _resources_order[::-1]:
                     if r in resources:
                         if l_num > stdscr_height - 2:
                             break
                         _r = resources[r]
-                        text_win.addstr(l_num, 0, '{} - {} - {}'.format(r, _r['status'], str(_r['ts'])))
+                        try:
+                            depth = r.count("/")
+                            start_char = "├"  # "└" if depth != last_depth else
+                            end_char = "┬" if "Stack" in _r['type'] else " "
+                            prefix = " " if _r['is_old'] else \
+                                (gen_progress_rotate(loop_counter) if "IN_PROGRESS" in _r['status'] else "✔")
+                            prefix += "   " * (depth-1) + (f"{start_char}──" if depth > 0 else "")
+                            prefix += end_char
+
+                            the_str = f"{_r['ts']} {prefix} {_r['status']} - {r}"
+                            text_win.addstr(l_num, 0, the_str[:max_str_len])
+                            if "FAILED" in _r['status']:
+                                l_num += 1
+                                text_win.addstr(l_num, 0, f"         {prefix} --> {_r['reason']}"[:max_str_len])
+                            last_depth = depth
+                        except Exception as e:
+                            logging.error(f"Failed to stream status events - ({str(e)}) - console window too small?")
+                            sys.exit(1)
                         l_num += 1
-                        del resources[r]
                 text_win.refresh()
                 time.sleep(2)
+
+            text_win.addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
+            text_win.refresh()
+            time.sleep(1.5)
+        except Exception as e:
+            _e = e
         finally:
             curses.nocbreak()
             stdscr.keypad(False)
@@ -221,6 +325,10 @@ def stream_cfn_events(stack_name, heading_prefix=None):
             curses.endwin()
 
     curses.wrapper(_run)
+    # echo(f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
+
+    if _e is not None:
+        echo(f"Error in stream events: {_e}")
 
 
 def s3_upload(filepath, obj_key, public_read=True):

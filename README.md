@@ -23,9 +23,10 @@ https://flux.vote
 
 ### local repo
 
-* `pyenv install -s` -- installs python matching `.python-version` if it isn't installed. (If there's any trouble with the .python-version in the repo, run `pyenv install 3.6.9`)
-* `pyenv virtualenv venv-voting-alpha`
-* If you don't have pyenv-virtualenv shell integration then you'll need to activate the venv yourself / manually. Shell integration does this automagically.
+* `./setup/pyenv.sh` -- ensures python and venv are set up
+  * DEPRECATED: `pyenv install` -- installs python matching `.python-version` if it isn't installed. (If there's any trouble with the .python-version in the repo, run `pyenv install 3.6.9`)
+  * DEPRECATED: `pyenv virtualenv venv-voting-alpha`
+  * DEPRECATED: If you don't have pyenv-virtualenv shell integration then you'll need to activate the venv yourself / manually. Shell integration does this automagically.
 * Python deps (for `./manage`): `pip install -r requirements.txt`
 * To install python deps for lambdas: `./manage pip all`
 
