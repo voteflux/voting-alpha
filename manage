@@ -226,6 +226,10 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
     except ClientError as e:
         if "does not exist" in str(e):
             return {}, [], update_start
+        elif "(Throttling)" in str(e):
+            sleep(1)
+            return _cfn_stack_extract_resources_status(stack_name=stack_name, recursive=recursive,
+                                                       update_start=update_start)
         else:
             raise e
     resources = {}
