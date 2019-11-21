@@ -124,6 +124,10 @@ def get_stack_details(stack_name):
     return None if len(ss) == 0 else ss[0]
 
 
+def get_stack_resource(stack_name, logical_resource_name):
+    return cfn.describe_stack_resource(StackName=stack_name, LogicalResourceId=logical_resource_name)['StackResourceDetail']
+
+
 def is_in_prog(stack_name):
     s = get_stack(stack_name)
     return s and 'IN_PROGRESS' in s['StackStatus']
@@ -756,7 +760,7 @@ def default_params_from_env(env_name, evs):
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
-    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY) } if env_name != "prod" else {})
+    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY) if env_name != "prod" else '' })
 
     return params
 
@@ -859,15 +863,17 @@ lambdas = {
 def upload_func(env_name, resource_name, nested):
     evs = get_evs(env_name)
     root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
-    tmpls = [ (root_tmpl_path.parent, cfn_tools.load_yaml(root_tmpl_path.read_text())) ]
+    tmpls = [ (root_tmpl_path.parent, evs.STACK_NAME, cfn_tools.load_yaml(root_tmpl_path.read_text())) ]
 
-    for nsName in nested:
-        (last_path, last_stack) = tmpls[-1]
-        ns_resource = last_stack['Resources'][nsName]
+    for ns_logical_name in nested:
+        (last_path, last_name, last_stack) = tmpls[-1]
+        ns_resource = last_stack['Resources'][ns_logical_name]
         ns_path = last_path / Path(ns_resource['Properties']['TemplateURL'])
-        tmpls.append((ns_path.parent, cfn_tools.load_yaml(ns_path)))
+        ns_stack_name = get_stack_resource(last_name, ns_logical_name)['PhysicalResourceId'].split('/')[-2]
+        tmpls.append((ns_path.parent, ns_stack_name, cfn_tools.load_yaml(ns_path)))
 
-    final_tmpl_dir, final_tmpl = tmpls[-1]
+    final_tmpl_dir, final_stack_name, final_tmpl = tmpls[-1]
+    lambda_func_name = get_stack_resource(final_stack_name, resource_name)['PhysicalResourceId']
 
     lambda_res = final_tmpl['Resources'][resource_name]['Properties']
     lambda_code_uri = lambda_res['CodeUri']
@@ -897,10 +903,11 @@ def upload_func(env_name, resource_name, nested):
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
     # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
 
-    #awslam = boto3.client('lambda')
-    #awslam.update_function_code(FunctionName=func_name, ZipFile=zip_bytes, Publish=True)
+    awslam = boto3.client('lambda')
+    resp = awslam.update_function_code(FunctionName=lambda_func_name, ZipFile=zip_bytes,
+                                       S3Bucket=evs.S3_CFN_SUPPORT_BUCKET, Publish=True)
 
-    print_output("Updated function {func_name}")
+    print_output(f"Updated function {lambda_func_name}. Resp: {resp}")
 
 
 # monkey patch so usage output looks nicer
