@@ -8,3 +8,4 @@ tmp*
 .out
 # just ignore anything starting with dunder (useful for temp otuputs, etc)
 __*
+_manager_cache.yaml

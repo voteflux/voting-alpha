@@ -338,6 +338,22 @@ def del_ssm_networkid_ethstats(NamePrefix, **props):
     return {'DeletedSSMNetworkIdAndEthStats': True}
 
 
+def upload_endpoint_details(NamePrefix, StaticBucketName, **params):
+    # todo: just copy of chain config atm
+    # this should (eventually) store the details of addresses etc of on-chain contracts.
+    poa_pks = json.loads(ssm.get_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))['Parameter']['Value'])
+    service_pks: dict = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])
+    enode_pks = json.loads(ssm.get_parameter(Name=gen_ssm_enode_pks(NamePrefix))['Parameter']['Value'])
+
+    chainspec = json.dumps(gen_chainspec_json(poa_pks, list(service_pks.values()), enode_pks, NamePrefix=NamePrefix, **params))
+    ret = {'ChainSpecGenerated': True}
+    obj_key = 'chain/chainspec.json'
+    s3 = boto3.client('s3')
+    put_resp = s3.put_object(Key=obj_key, Body=chainspec, Bucket=StaticBucketName, ACL='public-read')
+    ret['ChainSpecUrl'] = '{}/{}/{}'.format(s3.meta.endpoint_url, StaticBucketName, obj_key)
+    return ret
+
+
 def upload_chain_config(NamePrefix, StaticBucketName, **params):
     poa_pks = json.loads(ssm.get_parameter(Name=gen_ssm_key_poa_pks(NamePrefix))['Parameter']['Value'])
     service_pks: dict = json.loads(ssm.get_parameter(Name=gen_ssm_service_pks(NamePrefix))['Parameter']['Value'])

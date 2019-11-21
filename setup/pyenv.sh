@@ -8,3 +8,6 @@ echo "Installying python $PY_VER and setting up venv: $ENV_NAME"
 
 pyenv install $PY_VER
 pyenv virtualenv $ENV_NAME
+
+pyenv activate
+pip install -r ./_manager_lib/requirements.txt

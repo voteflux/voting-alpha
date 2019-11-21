@@ -16,8 +16,9 @@ Parameters:
 
 Resources:
 
-  # These will get replaced by the macro and multiplied across our N nodes
+  # **NOTE:** This will get replaced by the macro and multiplied across our N nodes
   rEip0:
+    DeletionPolicy: Delete
     Type: AWS::EC2::EIP
 
 Outputs:

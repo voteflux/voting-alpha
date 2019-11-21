@@ -475,6 +475,11 @@ Resources:
                 - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-nodekey-service-*"
             - Effect: Allow
               Action:
+                - ssm:GetParameter
+              Resource:
+                - !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${NamePrefix}-param-*"
+            - Effect: Allow
+              Action:
                 - ssm:DescribeParameters
               Resource: '*'
 
@@ -656,7 +661,7 @@ Outputs:
     Value: !GetAtt rPublicNode0.Outputs.oPublicIp
   oPublicNode0Url:
     Condition: cCreateNodes
-    Value: !Sub 'http://rPublicNode0.Outputs.oDomainName:8545'
+    Value: !Sub 'http://${rPublicNode0.Outputs.oDomainName}:8545'
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:
@@ -669,3 +674,14 @@ Outputs:
 #     Description: "Use this URL to access the Geth JSON RPC of your Ethereum Clients, or input it into Metamask"
 #     Value:
 #       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthJsonRPCURL"]
+
+  oMembershipAddr:
+    Value: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
+  oDemocHash:
+    Value: !GetAtt rChaincodeStack.Outputs.oDemocHash
+  oMkDemocTxid:
+    Value: !GetAtt rChaincodeStack.Outputs.oMkDemocTxid
+  oIndexAddr:
+    Value: !GetAtt rChaincodeStack.Outputs.oIndexAddr
+  oBBFarmAddr:
+    Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAddr

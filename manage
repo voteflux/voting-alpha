@@ -4,17 +4,32 @@
 
 import hashlib
 import platform
+import re
+import shutil
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
 from datetime import datetime
+from pathlib import Path
+
+logging.basicConfig(level=logging.INFO)
+
+try:
+    from _manager_lib import *
+except ModuleNotFoundError as e:
+    logging.error(f"Exception importing _manager_lib: ModuleNotFoundError: {e}")
+    logging.error("Try running `pip install -r _manager_lib/requirements.txt`")
+    sys.exit(1)
+
+tracker = StateTracker()
+state = tracker.read()
 
 from colorama import init, Fore, Back, Style
 init()
 
 from blessings import Terminal
-
-logging.basicConfig(level=logging.INFO)
+from dotenv import load_dotenv, dotenv_values
+import cfn_tools
 
 from time import sleep
 from contextlib import suppress
@@ -104,6 +119,11 @@ def get_stack(stack_name):
     return None
 
 
+def get_stack_details(stack_name):
+    ss = list(filter(lambda s: s['StackName'] == stack_name, cfn.describe_stacks(StackName=stack_name)['Stacks']))
+    return None if len(ss) == 0 else ss[0]
+
+
 def is_in_prog(stack_name):
     s = get_stack(stack_name)
     return s and 'IN_PROGRESS' in s['StackStatus']
@@ -190,6 +210,10 @@ def get_failed_msgs(stack_name):
             evts_final.append((r_id, reason))
             resources_done.add(r_id)
     return evts_final
+
+
+def cfn_outputs_to_dict(outputs):
+    return {d['OutputKey']: d['OutputValue'] for d in outputs}
 
 
 def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start=None):
@@ -599,9 +623,9 @@ def _step_to_parameters(step: int):
 
 @cli.command(name='deploy')
 @click.argument('stack-name', type=click.STRING, default='')
-@click.option("--deploy/--no-deploy", default=True)
-@click.option("--open-browser/--no-open-browser", default=False)
-@click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True,
+@click.option("--deploy/--no-deploy", default=True, is_flag=True)
+@click.option("--open-browser/--no-open-browser", default=False, is_flag=True)
+@click.option("--del-packaged-tmpl/--no-del-packaged-tmpl", default=True, is_flag=True,
               help="Remove tmp-stack.yaml after we're done generating + uploading it")
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")
 @click.option("--ssh-key", default=MAXS_SSH_KEY, type=click.STRING,
@@ -644,7 +668,7 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
         'HostedZoneDomain': VOTING_DOMAIN,
         'EC2InstanceType': 't2.small',
         'NumberOfEthereumConsensusNodes': '1',
-        'NumberOfEthereumPublicNodes': '2',
+        'NumberOfEthereumPublicNodes': '1',
         'Subdomain': TEST_SUBDOMAIN,
         'SSHKey': ssh_key,
         'AdminEmail': 'test-stack-flux-vote@xk.io',
@@ -688,6 +712,9 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
                 print_output("Deploy Success! {}".format(cfn_evt_url))
                 if del_packaged_tmpl:
                     os.system("rm {}".format(TMP_TMPL_FILE))
+                deets = get_stack_details(stack_name)
+
+                print_output(f"Outputs: {json.dumps(cfn_outputs_to_dict(deets['Outputs']), indent=2)}")
         else:
             print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
             if del_packaged_tmpl:
@@ -700,6 +727,180 @@ def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_
             os.system(_to_run)
         print_output("""Uploaded {}
         Launch via CloudFormation: {}""".format(obj_url, cfn_console_create_url))
+
+
+def get_ns_details(sn, r_name):
+    for r in state.get_stack_resources(sn):
+        if not (r['LogicalResourceId'] == r_name and r['ResourceType'] == "AWS::CloudFormation::Stack"):
+            break
+        ns_arn = r['PhysicalResourceId']
+    else:
+        raise Exception(f"Cannot find nested stack with name {r_name} in main stack {sn}")
+    with open(STACK_TMPL, 'r') as f:
+        contents = f.read()
+        results = re.search(f"{r_name}:[\n\s]*Type: AWS::CloudFormation::Stack[\n\s\w:]*TemplateURL:(.*)\.yaml", contents, re.M | re.S)
+        ns_file_path = results.group(1) + ".yaml"
+    return { 'arn': ns_arn, 'file_path': os.path.join('./stack', ns_file_path) }
+
+
+def default_params_from_env(env_name, evs):
+    params = {
+        'NamePrefix': evs.NAME_PREFIX,
+        'HostedZoneDomain': evs.DOMAIN,
+        'EC2InstanceType': 't2.small',
+        'NumberOfEthereumConsensusNodes': '1',
+        'NumberOfEthereumPublicNodes': '1',
+        'Subdomain': evs.SUBDOMAIN,
+        'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
+        'pDeployMacros': 'false',
+        # 'pDeployAcmAutovalidate': 'false',
+        # 'Nonce': str(int(time.time()))
+    }
+    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY) } if env_name != "prod" else {})
+
+    return params
+
+
+def gen_packaged_stack_tmp_filename(env_name):
+    return f'tmp-stack.{env_name}.yaml'
+
+
+def get_evs(env_name):
+    env_file = f'.env.{env_name}'
+    load_dotenv(env_file, override=True)
+    evs = AttrDict(dotenv_values(env_file))
+    return evs
+
+
+@cli.command(name='sync-env')
+@click.argument('env-name', type=click.STRING, default='dev')
+@click.option("--nested-stack", "-ns", type=click.STRING, help="The resource name of the nested stack to update")
+@click.option("--watch/--no-watch", default=True, is_flag=True, help="Stream CFN events as it deploys.")
+@click.option("--set-params", type=click.STRING, help="JSON encoded parameters. New values will be set these params, and existing values will be removed from the cache.")
+@click.option("--update-params", type=click.STRING, help="JSON encoded parameters. New values will be set _only_ on these params, and existing values will be used for existing params.")
+@click.option("--pkg-python/--no-pkg-python", default=True)
+@click.option("--use-last-uploaded", default=False, is_flag=True,
+              help="do not package a new template, just redeploy the last one uploaded to S3.")
+@click.pass_context
+def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded):
+    if set_params and update_params:
+        raise Exception("Cannot set and update params at the same time. Use one.")
+
+    evs = get_evs(env_name)
+    stack_name = evs.STACK_NAME
+
+    if deploy:
+        await_in_prog(stack_name)
+
+    tmp_template_filename = gen_packaged_stack_tmp_filename(env_name)
+    obj_key = f"templates/{env_name}" + os.path.split(evs.STACK_TEMPLATE)[-1]
+    s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(s3)
+
+    if not use_last_uploaded:
+        must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
+                 .format(evs.STACK_TEMPLATE, evs.S3_CFN_SUPPORT_BUCKET, tmp_template_filename), silent=True)
+        s3_tfer.upload_file(tmp_template_filename, evs.S3_CFN_SUPPORT_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
+
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, evs.S3_CFN_SUPPORT_BUCKET, obj_key)
+    print(f"Template URL: {obj_url}")
+
+    params = default_params_from_env(env_name, evs)
+    # params.update(**_step_to_parameters(step))
+    params_aws = dict_to_cfn_params(params)
+
+    cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(
+        obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))
+
+    print_output("""Uploaded {}
+            Launch via CloudFormation: {}""".format(obj_url, cfn_console_create_url))
+
+    def gen_cfn_evt_url(sid):
+        return "https://ap-southeast-2.console.aws.amazon.com/cloudformation/home?region=ap-southeast-2#/stacks/{}/events".format(
+            urllib.parse.quote(sid, safe=''))
+
+    def gen_open_url_cmd(url):
+        return "cmd.exe /c start {}".format(url)
+
+    await_in_prog(stack_name)
+    stack_del_if_necessary(stack_name)
+    if stack_exists(stack_name):
+        sid = update_stack(stack_name, obj_url, params_aws)
+    else:
+        sid = create_stack(stack_name, obj_url, params_aws)
+    cfn_evt_url = gen_cfn_evt_url(sid)
+    if watch:
+        stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+        _exists = stack_exists(stack_name)
+        if not _exists or stack_failed(stack_name):
+            if _exists:
+                msgs = ["{}: {}".format(a, b) for (a, b) in get_failed_msgs(stack_name)]
+                print_output("Deploy failed. Msgs: \n\n{}".format('\n'.join(msgs)))
+            else:
+                print_output("Deploy failed and is deleted.")
+        else:
+            print_output("Deploy Success! {}".format(cfn_evt_url))
+            deets = get_stack_details(stack_name)
+
+            print_output(f"Outputs: {json.dumps(cfn_outputs_to_dict(deets['Outputs']), indent=2)}")
+    else:
+        print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
+
+
+lambdas = {
+    '': ''
+}
+
+
+@cli.command(name='sync-lambda')
+@click.argument('env-name', type=click.STRING, default='dev')
+@click.argument('resource-name')
+@click.argument('nested', nargs=-1)
+def upload_func(env_name, resource_name, nested):
+    evs = get_evs(env_name)
+    root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
+    tmpls = [ (root_tmpl_path.parent, cfn_tools.load_yaml(root_tmpl_path.read_text())) ]
+
+    for nsName in nested:
+        (last_path, last_stack) = tmpls[-1]
+        ns_resource = last_stack['Resources'][nsName]
+        ns_path = last_path / Path(ns_resource['Properties']['TemplateURL'])
+        tmpls.append((ns_path.parent, cfn_tools.load_yaml(ns_path)))
+
+    final_tmpl_dir, final_tmpl = tmpls[-1]
+
+    lambda_res = final_tmpl['Resources'][resource_name]['Properties']
+    lambda_code_uri = lambda_res['CodeUri']
+    lambda_path = final_tmpl_dir / lambda_code_uri
+
+    print(lambda_path, lambda_code_uri, lambda_res)
+
+    layers = [] if 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
+
+    # todo: maybe should use working directory?
+    root_dir = Path(os.path.dirname(os.path.realpath(__file__)))
+    tmp_zip = f"{root_dir}/tmp-func-{resource_name}.zip"
+
+    if os.path.exists(tmp_zip):
+        must_run(f'rm -v {tmp_zip}', silent=True)
+
+    os.chdir(lambda_path)
+    must_run(f'zip -r {tmp_zip} ./', silent=True)
+
+    for layer in layers:
+        os.chdir(layer.parent)
+        must_run(f'zip -ur {tmp_zip} ./{layer.name}', silent=True)
+
+    os.chdir(root_dir)
+    with open('./tmp-func.zip', 'rb') as f:
+        zip_bytes = f.read()
+    # obj_key = f'./tmp-func-{int(time.time())}.zip'
+    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+
+    #awslam = boto3.client('lambda')
+    #awslam.update_function_code(FunctionName=func_name, ZipFile=zip_bytes, Publish=True)
+
+    print_output("Updated function {func_name}")
 
 
 # monkey patch so usage output looks nicer

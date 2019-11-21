@@ -27,7 +27,7 @@ https://flux.vote
   * DEPRECATED: `pyenv install` -- installs python matching `.python-version` if it isn't installed. (If there's any trouble with the .python-version in the repo, run `pyenv install 3.6.9`)
   * DEPRECATED: `pyenv virtualenv venv-voting-alpha`
   * DEPRECATED: If you don't have pyenv-virtualenv shell integration then you'll need to activate the venv yourself / manually. Shell integration does this automagically.
-* Python deps (for `./manage`): `pip install -r requirements.txt`
+* Python deps (for `./manage`): `pip install -r _manager_lib/requirements.txt`
 * To install python deps for lambdas: `./manage pip all`
 
 ## deploying and `./manage`

@@ -15,7 +15,7 @@ import os, sys
 # sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/deps')
 # print("PYTHONPATH:", os.environ['PYTHONPATH'])
 
-import bootstrap
+from .bootstrap import *
 
 from lib import *
 
@@ -112,8 +112,7 @@ def handler_priv_keys(event: dict, context, **props):
 
     elif event['RequestType'] == 'Update':
         # check if we need to update any key stuff (i.e. did nNodes change?)
-        ssm = boto3.client('ssm')
-        old_n = ssm.get_parameter(Name="sv-{}-param-nconsensus-nodes".format(NamePrefix))['Parameter']['Value']
+        old_n = get_ssm_param_no_enc("sv-{}-param-nconsensus-nodes".format(NamePrefix))
         if old_n != NConsensusNodes:
             raise Exception("You cannot update NConsensusNodes currently. Sorry about that.")
         return CrResponse(CfnStatus.SUCCESS, {"UpdatedPrivKeys": False}, physical_id)
