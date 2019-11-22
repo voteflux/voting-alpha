@@ -24,6 +24,7 @@ except ModuleNotFoundError as e:
 #tracker = StateTracker()
 #state = tracker.read()
 
+from attrdict import AttrDict
 from colorama import init, Fore, Back, Style
 init()
 
