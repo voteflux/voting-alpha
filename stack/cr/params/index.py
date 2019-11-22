@@ -69,6 +69,7 @@ def wrap_handler(_handler):
 def gen_nonce(**params):
     return {'Nonce': int(time.time())}
 
+
 def do_create(props: dict):
     data = {}
     data.update(generate_ec2_key(**props))

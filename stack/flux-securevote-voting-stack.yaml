@@ -636,6 +636,7 @@ Resources:
         pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
         pApiStageName: svprod
         pLambdaLayer: !Ref rLambdaLayer
+        pAdminEmail: !Ref AdminEmail
 
 
 #  rPublicLoadBalancer:

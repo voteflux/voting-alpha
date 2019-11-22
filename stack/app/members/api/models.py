@@ -2,21 +2,20 @@ import json
 import datetime
 import os
 from enum import Enum
-from typing import TypeVar, Literal, Union
+from typing import TypeVar
 
 import toolz
 from pymonad import Nothing, Maybe, Just
 from pynamodb.indexes import GlobalSecondaryIndex, AllProjection
 from pynamodb.models import Model
 from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, UTCDateTimeAttribute, ListAttribute, MapAttribute, \
-    Attribute, BinaryAttribute
+    Attribute, BinaryAttribute, NumberAttribute
 from pynamodb.constants import STRING
 import pynamodb.exceptions as pddb_ex
-from attrdict import AttrDict
+from .env import env
 
 
 T = TypeVar('T')
-env = AttrDict(os.environ)
 
 
 def gen_table_name(name):
@@ -34,7 +33,7 @@ class EnumAttribute(Attribute):
     def serialize(self, value):
         if value not in self.enum:
             raise pddb_ex.PutError(f"Invalid value in EnumAttribute: {value}. Allowed values: {self.enum_values}")
-        return str(value)
+        return str(value.value)
 
     def deserialize(self, value):
         if value not in self.enum_values:
@@ -48,6 +47,10 @@ class ModelEncoder(json.JSONEncoder):
             return obj.attribute_values
         elif isinstance(obj, datetime.datetime):
             return obj.isoformat()
+        elif isinstance(obj, bytes):
+            return obj.decode()
+        elif isinstance(obj, SessionState):
+            return obj.value
         return json.JSONEncoder.default(self, obj)
 
 
@@ -102,10 +105,10 @@ JWT has a token that lets the user de-anon themselves in logs
 Can we store users public key and use to encrypt? yes
 Encrypt logs with users voting key
 
--> POST address + email + secret
+-> POST address + email
 ** send email to user with OTP
 <- JWT
--> POST jwt + address + secret + OTP
+-> POST jwt + OTP
 ** mark email as "in-progress"
 -> POST jwt + address + encrypted_payload
 ** send email backup, mark awaiting_confirmation
@@ -119,25 +122,35 @@ Encrypt logs with users voting key
 
 
 class SessionState(Enum):
-    s010_SENT_OTP_EMAIL = "_010_SENT_OTP_EMAIL"
-    s020_CONFIRMED_OTP = "_020_CONFIRMED_OTP"
-    s030_SENT_BACKUP_EMAIL = "_030_SENT_BACKUP_EMAIL"
-    s040_MADE_ID_CONF_TX = "_040_MADE_ID_CONF_TX"
+    s000_NEWLY_CREATED = "s000_NEWLY_CREATED"
+    s010_SENT_OTP_EMAIL = "s010_SENT_OTP_EMAIL"
+    s020_CONFIRMED_OTP = "s020_CONFIRMED_OTP"
+    s030_SENT_BACKUP_EMAIL = "s030_SENT_BACKUP_EMAIL"
+    s040_MADE_ID_CONF_TX = "s040_MADE_ID_CONF_TX"
+
+
+class TimestampMap(MapAttribute):
+    ts = UTCDateTimeAttribute(default=datetime.datetime.now())
 
 
 class OtpState(MapAttribute):
-    not_valid_after: UTCDateTimeAttribute
-    not_valid_before: UTCDateTimeAttribute
-    otp_hash: BinaryAttribute()
+    not_valid_after = UTCDateTimeAttribute()
+    not_valid_before = UTCDateTimeAttribute()
+    otp_hash = BinaryAttribute()
+    succeeded = BooleanAttribute()
+    emails_sent_at = ListAttribute(of=TimestampMap, default=list)
+    incorrect_attempts = NumberAttribute(default=0)
 
 
 class SessionModel(BaseModel):
     class Meta:
         table_name = gen_table_name('session-db')
-    session_id = UnicodeAttribute(hash_key=True)
-    session_anon_id = UnicodeAttribute()
+        region = env.AWS_REGION
+    session_anon_id = UnicodeAttribute(hash_key=True)
     state = EnumAttribute(SessionState)
-    otp = OtpState()
+    not_valid_before = UTCDateTimeAttribute(default=lambda: datetime.datetime.now())
+    not_valid_after = UTCDateTimeAttribute()
+    otp = OtpState(null=True)
 
 
 class QuestionModel(UidPrivate):

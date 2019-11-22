@@ -26,6 +26,9 @@ Parameters:
 
   pLambdaLayer:
     Type: String
+
+  pAdminEmail:
+    Type: String
     
 
 
@@ -65,7 +68,8 @@ Resources:
         Variables:
           ENV_VAR_TEST: 'uri://test-value'
           pNamePrefix: !Ref pNamePrefix
-      Handler: api.onboard_handler
+          pAdminEmail: !Ref pAdminEmail
+      Handler: api.message_handler
       Runtime: python3.6
       Layers:
         - !Ref pLambdaLayer

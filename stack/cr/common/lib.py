@@ -6,6 +6,7 @@ import string
 import time
 import urllib
 import hashlib
+from base64 import b64encode
 from datetime import datetime
 from typing import List, NamedTuple
 
@@ -61,6 +62,10 @@ def http_get(url: str) -> bytes:
 
 def _hash(bs: bytes) -> bytes:
     return hashlib.sha512(bs).digest()
+
+
+def _hash_str(s: str) -> str:
+    return _hash(s.encode()).decode()
 
 
 def get_some_entropy() -> bytes:
