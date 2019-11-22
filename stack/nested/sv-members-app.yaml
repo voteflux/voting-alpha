@@ -44,37 +44,15 @@ Globals:
 
 Resources:
 
-  # Simple DB for logging
-  rAdminAddMemberDB:
+  rSessionsDB:
     Type: AWS::Serverless::SimpleTable
     Properties:
-      TableName: !Sub ${pNamePrefix}-admin-add-member-db
+      TableName: !Sub ${pNamePrefix}-session-db
       PrimaryKey:
-        Name: id
+        Name: session_id
         Type: String
       SSESpecification:
         SSEEnabled: true
-
-  rMembersLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: !Sub ${pNamePrefix}-members-layer
-      Description: SV membership management python libs
-      ContentUri: ../app/members/deps
-      CompatibleRuntimes:
-        - python3.6
-      RetentionPolicy: Delete
-
-  rCommonLayer:
-    Type: AWS::Serverless::LayerVersion
-    Properties:
-      LayerName: !Sub ${pNamePrefix}-common-layer
-      Description: SV app lambda common python libs
-      ContentUri: ../app/common
-      CompatibleRuntimes:
-        - python3.6
-      RetentionPolicy: Delete
-
 
   # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
   # and logs any arbitrary data needed for later audit
@@ -86,6 +64,7 @@ Resources:
       Environment:
         Variables:
           ENV_VAR_TEST: 'uri://test-value'
+          pNamePrefix: !Ref pNamePrefix
       Handler: api.onboard_handler
       Runtime: python3.6
       Layers:

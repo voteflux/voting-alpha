@@ -22,8 +22,8 @@ except ModuleNotFoundError as e:
     logging.error("Try running `pip install -r _manager_lib/requirements.txt`")
     sys.exit(1)
 
-#tracker = StateTracker()
-#state = tracker.read()
+tracker = StateTracker()
+state = tracker.read()
 
 from attrdict import AttrDict
 from colorama import init, Fore, Back, Style
@@ -261,8 +261,9 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                 root = r_name
             else:
                 continue
+        is_root = root == r_name
         is_stack = evt['ResourceType'] == "AWS::CloudFormation::Stack"
-        is_old = evt['Timestamp'] < update_start
+        is_old = update_start and evt['Timestamp'] < update_start
         t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
         seconds_ago = (datetime.now(timezone.utc) - evt['Timestamp']).total_seconds()
         resources[r_name] = r = {'status': evt['ResourceStatus'],
@@ -273,8 +274,8 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                                  'is_old': is_old,
                                  'parent': parent or "<Root>",
                                  'evt': evt,
-                                 'depth': 0
-                             }
+                                 'depth': 0 if is_root else 1
+                                 }
         # n_old = len(list(filter(lambda k: resources[k]['is_old'] and resources[k]['parent'] == stack_name, resources)))
         if is_stack or not r['is_old'] or n_old_counter < max_old:
             _res_ord.insert(0, r_name)
@@ -422,17 +423,28 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                         if _r['is_old'] and skip_old:
                             continue
 
-                        depth = r.count("/")
-                        start_char = "├" if _r_next and _r_next['depth'] == _r['depth'] else ("└" if _r_next and _r_next['depth'] > _r['depth'] else "┬")
-                        end_char = "┬" if "Stack" in _r['type'] else " "
-                        end_char = ("┬" if depth > 0 else "├") if "::Stack" in _r['type'] else " "
+                        depth = _r['depth']
+                        next_depth = _r_next['depth'] if _r_next else 0
+                        prev_depth = _r_prev['depth'] if _r_prev else 0
+
+                        start_char = "├" if prev_depth <= depth == next_depth or prev_depth > depth \
+                            else "└" if next_depth == 0 \
+                            else "└" if next_depth > depth \
+                            else "└" if next_depth < depth \
+                            else "┬"
+                        end_char = "─" if "::Stack" not in _r['type'] \
+                            else "┬" if prev_depth < depth \
+                            else "├" if prev_depth == depth \
+                            else "┬" if prev_depth > depth \
+                            else "x"
+                        # end_char = ("┬" if depth > 0 else "├") if "::Stack" in _r['type'] else " "
                         prefix = " " if _r['is_old'] else \
                             (gen_progress_rotate(loop_counter) if "IN_PROGRESS" in _r['status'] else "✔")
-                        prefix += "┆  " * (depth-1) + (f"{start_char}──" if depth > 0 else "")
+                        prefix += ("┆ " if depth > 1 else "") + "  " * (depth-2) + (f"{start_char}─" if depth > 0 else "")
                         prefix += end_char
                         # prefix += colors('red')(f"[{rs_left:>2d}]")
 
-                        the_str = f"{_r['ts']} {prefix} {fmt_r(r, _r)}"
+                        the_str = f"{_r['ts']} {prefix}─ {fmt_r(r, _r)}"
                         type_msg = fmt_type(_r)
                         total_len = true_len(the_str + type_msg) + 2
                         if total_len <= stdscr_width:
@@ -448,7 +460,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                             addstr(l_num, 0, f"         {prefix} --> {_r['reason']}")  # [:max_str_len]
                         last_depth = depth
                         l_num += 1
-                while l_num < stdscr_height:
+                while l_num < stdscr_height - 1:
                     addstr(l_num, 0, " ")
                     l_num += 1
                 time.sleep(2)
@@ -459,7 +471,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
             logging.error(f"Error in CFN stream: {e}, {repr(e)}")
             sys.stderr.write(f"Error in CFN stream: {e}, {repr(e)}\n")
             print_tb(e.__traceback__)
-            with open('__manage_log', 'a') as f:
+            with open('__tmp_manage_log', 'a') as f:
                 f.write(f"Exception ({e}) at {time.time()} while streaming CFN events")
                 f.write('\n\n'.join([str(time.time()), str(e), repr(e), '']))
             _e = e
@@ -524,7 +536,7 @@ def cli(debug, offset, region):
     cfn = boto3.client('cloudformation', **cfn_extras)
 
 
-py_targets_raw = ["cr", "members", "app"]
+py_targets_raw = ["cr", "members"]
 py_targets = click.Choice(py_targets_raw + ['all'])
 
 
@@ -539,9 +551,10 @@ py_targets = click.Choice(py_targets_raw + ['all'])
 def pip(target, pkgs, no_system, pip_args, use_docker):
     targets = py_targets_raw if target == "all" else [target]
     _pkgs = list(pkgs)
-    target_paths = [{'cr': 'stack/cr/common', 'members': 'stack/app/members', 'app': 'stack/app/common'}[target] for target in targets]
+    target_paths = [{'cr': 'stack/cr/common', 'members': 'stack/app/members'}[target] for target in targets]
     for target_path in target_paths:
         _pip(target_path, _pkgs, no_system, pip_args, use_docker)
+
 
 def _pip(target_path, pkgs, no_system, pip_args, use_docker):
     curr_dir = os.getcwd()
@@ -839,7 +852,7 @@ def default_params_from_env(env_name, evs):
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
-    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY) if env_name != "prod" else '' })
+    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY)})  #  if env_name != "prod" else ''
 
     return params
 
@@ -870,6 +883,8 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     if set_params and update_params:
         raise Exception("Cannot set and update params at the same time. Use one.")
     fullscreen = not no_fullscreen
+
+    env_name = env_name if not env_name[:5] == ".env." else env_name[5:]
 
     evs = get_evs(env_name)
     stack_name = evs.STACK_NAME
@@ -937,6 +952,24 @@ lambdas = {
 }
 
 
+def package_lambda(resource_name: str, lambda_path: str, layers: List[Path]):
+    # todo: maybe should use working directory?
+    root_dir = Path(os.path.dirname(os.path.realpath(__file__)))
+    tmp_zip = f"{root_dir}/tmp-func-{resource_name}.zip"
+
+    if os.path.exists(tmp_zip):
+        must_run(f'rm -v {tmp_zip}', silent=True)
+
+    os.chdir(lambda_path)
+    must_run(f'zip -r {tmp_zip} ./', silent=True)
+
+    for layer in layers:
+        os.chdir(layer.parent)
+        must_run(f'zip -ur {tmp_zip} ./{layer.name}', silent=True)
+    os.chdir(root_dir)
+    return tmp_zip
+
+
 @cli.command(name='sync-lambda')
 @click.argument('env-name', type=click.STRING, default='dev')
 @click.argument('resource-name')
@@ -963,23 +996,9 @@ def upload_func(env_name, resource_name, nested):
     print(lambda_path, lambda_code_uri, lambda_res)
 
     layers = [] if 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
+    tmp_zip = package_lambda(resource_name, lambda_path, layers)
 
-    # todo: maybe should use working directory?
-    root_dir = Path(os.path.dirname(os.path.realpath(__file__)))
-    tmp_zip = f"{root_dir}/tmp-func-{resource_name}.zip"
-
-    if os.path.exists(tmp_zip):
-        must_run(f'rm -v {tmp_zip}', silent=True)
-
-    os.chdir(lambda_path)
-    must_run(f'zip -r {tmp_zip} ./', silent=True)
-
-    for layer in layers:
-        os.chdir(layer.parent)
-        must_run(f'zip -ur {tmp_zip} ./{layer.name}', silent=True)
-
-    os.chdir(root_dir)
-    with open('./tmp-func.zip', 'rb') as f:
+    with open(f'./{tmp_zip}', 'rb') as f:
         zip_bytes = f.read()
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
     # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")

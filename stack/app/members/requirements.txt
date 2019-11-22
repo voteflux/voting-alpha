@@ -1,4 +1,4 @@
 pymonad
 pynamodb
 attrdict
-
+web3

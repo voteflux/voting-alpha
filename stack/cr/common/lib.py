@@ -8,6 +8,8 @@ import urllib
 import hashlib
 from datetime import datetime
 from typing import List, NamedTuple
+
+from botocore.exceptions import ClientError
 from ecdsa import SigningKey, SECP256k1
 
 import boto3
@@ -85,7 +87,7 @@ def generate_ec2_key(ShouldGenEc2SSHKey: bool, NamePrefix: str, SSHEncryptionPas
             raise Exception("ssh key gen not supported yet")
             # ssh_pem = ec2.create_key_pair(KeyName=KeyPairName)['KeyMaterial']
             # sns = boto3.client('sns')
-        elif 'SSHKey' in kwargs:
+        elif 'SSHKey' in kwargs and kwargs['SSHKey']:
             ec2.import_key_pair(KeyName=KeyPairName, PublicKeyMaterial=kwargs['SSHKey'].encode())
         else:
             raise Exception(
@@ -131,6 +133,14 @@ def put_param_no_enc(name, value, description='', encode_json=False, overwrite=F
 
 def put_param_with_enc(name, value, description='', overwrite=False):
     return ssm.put_parameter(Name=name, Value=value, Type="SecureString", Description=description, Overwrite=overwrite)
+
+
+def delete_ssm_param(name):
+    try:
+        ssm.delete_parameter(Name=name)
+    except ClientError as e:
+        if "ParameterNotFound" not in str(e):
+            raise e
 
 
 def ssm_param_exists(name):
@@ -333,8 +343,8 @@ def gen_eth_stats_secret(NamePrefix, **kwargs):
 
 
 def del_ssm_networkid_ethstats(NamePrefix, **props):
-    ssm.delete_parameter(Name=gen_ssm_eth_stats_secret(NamePrefix))
-    ssm.delete_parameter(Name=gen_ssm_networkid(NamePrefix))
+    delete_ssm_param(gen_ssm_eth_stats_secret(NamePrefix))
+    delete_ssm_param(gen_ssm_networkid(NamePrefix))
     return {'DeletedSSMNetworkIdAndEthStats': True}
 
 

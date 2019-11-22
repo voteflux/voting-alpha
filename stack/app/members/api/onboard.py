@@ -1,7 +1,4 @@
-import web3
-
-from .bootstrap import *
-from common.lib import mk_logger
+from stack.app.members.api.lib import mk_logger
 
 log = mk_logger('members-onboard')
 
