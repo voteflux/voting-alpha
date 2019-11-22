@@ -9,8 +9,9 @@ import shutil
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
+from traceback import print_tb
 
 logging.basicConfig(level=logging.INFO)
 
@@ -28,7 +29,7 @@ from attrdict import AttrDict
 from colorama import init, Fore, Back, Style
 init()
 
-from blessings import Terminal
+from blessed import Terminal
 from dotenv import load_dotenv, dotenv_values
 import cfn_tools
 
@@ -144,10 +145,10 @@ def stack_failed(stack_name):
     return s and ('FAILED' in s['StackStatus'] or 'ROLLBACK' in s['StackStatus'])
 
 
-def await_in_prog(stack_name):
+def await_in_prog(stack_name, heading_prefix="AWAITING", fullscreen=True):
     if is_in_prog(stack_name):
         logging.info("Waiting for CFN deploy to complete before we trigger another.")
-        stream_cfn_events(stack_name, heading_prefix="AWAITING")
+        stream_cfn_events(stack_name, heading_prefix=heading_prefix, fullscreen=fullscreen)
         logging.info("Previous deploy completed, performing deploy...")
 
 
@@ -221,20 +222,21 @@ def cfn_outputs_to_dict(outputs):
     return {d['OutputKey']: d['OutputValue'] for d in outputs}
 
 
-def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start=None):
+def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start: datetime = None, parent=None, max_old=5):
     try:
         evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
     except ClientError as e:
         if "does not exist" in str(e):
             return {}, [], update_start
         elif "(Throttling)" in str(e):
-            sleep(1)
+            sleep(0.3)
             return _cfn_stack_extract_resources_status(stack_name=stack_name, recursive=recursive,
-                                                       update_start=update_start)
+                                                       update_start=update_start, parent=parent)
         else:
             raise e
     resources = {}
     _res_ord = []
+    root = None
 
     # find update_start first
     if update_start is None:
@@ -247,65 +249,103 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                 update_start = evt['Timestamp']
                 break
 
+    n_old_counter = 0
     for evt in evts:
         r_name = evt['LogicalResourceId']
-        if r_name in resources or r_name in _res_ord or r_name == stack_name:
+
+        if r_name in resources or r_name in _res_ord:  # resources we already track
             continue
-        resources[r_name] = {'status': evt['ResourceStatus'],
-                             'ts': str(evt['Timestamp'].time()).split('.')[0],
-                             'reason': evt.get('ResourceStatusReason', '<MISSING>'),
-                             'type': evt.get('ResourceType', ""),
-                             'is_old': False if update_start is None else evt['Timestamp'] < update_start
+
+        if r_name == stack_name:
+            if parent is None and root is None:
+                root = r_name
+            else:
+                continue
+        is_stack = evt['ResourceType'] == "AWS::CloudFormation::Stack"
+        is_old = evt['Timestamp'] < update_start
+        t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
+        seconds_ago = (datetime.now(timezone.utc) - evt['Timestamp']).total_seconds()
+        resources[r_name] = r = {'status': evt['ResourceStatus'],
+                                 'ts': colors('dim_white')("   (old)") if is_old else f"{seconds_ago:>3.0f}s ago",
+                                 'reason': evt.get('ResourceStatusReason', '<MISSING>'),
+                                 'type': evt.get('ResourceType', ""),
+                                 # we always want to show stacks, so they're never "old"
+                                 'is_old': is_old,
+                                 'parent': parent or "<Root>",
+                                 'evt': evt,
+                                 'depth': 0
                              }
-        _res_ord.insert(0, r_name)
-        if recursive and evt['ResourceType'] == "AWS::CloudFormation::Stack" and r_name != stack_name:
+        # n_old = len(list(filter(lambda k: resources[k]['is_old'] and resources[k]['parent'] == stack_name, resources)))
+        if is_stack or not r['is_old'] or n_old_counter < max_old:
+            _res_ord.insert(0, r_name)
+            n_old_counter += 1 if r['is_old'] and not is_stack else 0
+        if recursive and is_stack and r_name != stack_name:
             phys_id = evt['PhysicalResourceId']
             if phys_id != "":
                 sub_name = phys_id.split('/')[1]
-                sub_res, sub_res_ord, _meh = _cfn_stack_extract_resources_status(sub_name, recursive=recursive,
-                                                                                 update_start=update_start)
+                sub_res, sub_res_ord, _meh = _cfn_stack_extract_resources_status(
+                    sub_name, recursive=recursive, update_start=update_start, parent=stack_name
+                )
                 _res_ord = [f"{r_name}/{n}" for n in sub_res_ord] + _res_ord
-                resources.update({f"{r_name}/{k}": v for k, v in sub_res.items()})
+                resources.update({f"{r_name}/{k}": dict(v, depth=v['depth'] + 1) for k, v in sub_res.items()})
 
-    used = set()
-    res_ord = [r for r in _res_ord if r not in used and (used.add(r) or True)]
+    root_list_maybe = [] if root is None else [root]
+    used = set(root_list_maybe)
+    res_ord = [r for r in _res_ord if r not in used and (used.add(r) or True)] + root_list_maybe
 
     return resources, res_ord, update_start
 
 
 def get_c(cs, name: str) -> str:
-    n_split = name.split('_')
-    name = name if len(n_split) <= 1 else f"LIGHT{n_split[1].upper()}_EX"
-    return cs.__getattribute__(name.upper())
+    ns = name.split('_')
+    color = ns[-1].upper()
+    return (Style.DIM if 'dim' in ns else '') \
+           + (Style.BRIGHT if 'l' in ns else '') \
+           + cs.__getattribute__(ns[-1].upper()) if color else ''
 
 
-def colors(fore='reset', back='reset'):
-    def mk_colorful(str):
-        return get_c(Fore, fore) + get_c(Back, back) + str + Fore.RESET + Back.RESET
+def colors(fore='reset', back='reset', prefix='', suffix=''):
+    def mk_colorful(msg):
+        return f"{get_c(Fore, fore)}{get_c(Back, back)}{prefix}{msg}{suffix}{Fore.RESET}{Back.RESET}{Style.RESET_ALL}"
     return mk_colorful
+
+
+def fmt_type(_r):
+    tys = _r['type'].split('::')[1:]
+    abbreviations = {
+        'CloudFormation': 'CFN',
+        'ApiGateway': 'ApiG',
+        'Route53': 'R53'
+    }
+    return '::'.join([abbreviations.get(tys[0], tys[0])] + tys[1:])
 
 
 def fmt_r(r, _r):
     rs = r.split('/')
     rs[-1] = colors('l_blue')(rs[-1])
-    status_map = {
+    status_colors = {
         "DELETE_FAILED": colors('black', 'red'),
         "DELETE_IN_PROGRESS": colors('red', 'black'),
         "DELETE_COMPLETE": colors('l_red', 'black'),
 
         "CREATE_FAILED": colors('red'),
         "CREATE_IN_PROGRESS": colors('l_green'),
-        "CREATE_COMPLETE": colors('green'),
+        "CREATE_COMPLETE": colors('dim_green'),
 
         "UPDATE_FAILED": colors('red'),
         "UPDATE_IN_PROGRESS": colors('l_green'),
-        "UPDATE_COMPLETE": colors('green'),
+        "UPDATE_COMPLETE": colors('dim_green'),
+
+        "CLEANUP": colors('l_cyan'),
+        "IS_OLD": colors('dim_white'),
     }
-    status = status_map.get(_r['status'], colors())(_r['status'])
+    s = _r['status']
+    color_key = "IS_OLD" if _r['is_old'] else "CLEANUP" if "CLEANUP_IN_PROG" in s else s
+    status = status_colors.get(color_key, colors())(_r['status'])
     return f"{status} - {'/'.join(rs)}"
 
 
-def stream_cfn_events(stack_name, heading_prefix=None):
+def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscreen=True):
     # echo(json.dumps(_cfn_stack_extract_resources_status(stack_name, recursive=True), indent=2))
     # return
     import curses
@@ -313,32 +353,36 @@ def stream_cfn_events(stack_name, heading_prefix=None):
     _e = None
 
     term = Terminal()
-    print(term.clear())
+
+    def clear_term():
+        if fullscreen:
+            print(term.clear())
+
+    clear_term()
 
     def _run():
         nonlocal _e
+        ansi_escape = re.compile(r'\x1B[@-_][0-?]*[ -/]*[@-~]')
 
-        stdscr_height, stdscr_width = term.height, term.width
-        max_str_len = stdscr_width - 1
+        def true_len(msg: str):
+            return len(ansi_escape.sub('', msg))
 
         def addstr(y, x, msg):
-            with term.location(x, y):
-                print(msg)
+            if fullscreen:
+                with term.location(x, y):
+                    print(msg)
+            else:
+                print((x, y), msg)
 
-        def gen_heading():
-            dt = datetime.utcnow()
+        def gen_heading(update_start: datetime = None):
+            dt = update_start or datetime.utcnow()
             heading = f'CFN Status ({stack_name})'
             if heading_prefix:
                 heading = f'[{heading_prefix}] {heading}'
             return f'{dt.strftime("%H:%M:%S")} {heading}'
 
         def gen_progress_rotate(i):
-            return {
-                0: "|",
-                1: "/",
-                2: "—",
-                3: "\\"
-            }[i % 4]
+            return {0: "|", 1: "/", 2: "—", 3: "\\"}[i % 4]
 
         addstr(0, 0, gen_heading())
         loop_counter = 0
@@ -353,53 +397,83 @@ def stream_cfn_events(stack_name, heading_prefix=None):
                         echo(f"ClientError: {str(e)}")
                         break
                     raise e
-
-                print(term.clear())
-                addstr(0, 0, gen_heading() + f" | update started: {_update_start.strftime('%H:%M:%S')}")
+                clear_term()
+                stdscr_height, stdscr_width = term.height, term.width
+                addstr(0, 0, gen_heading(_update_start)) # + f" | update started: {_update_start.strftime('%H:%M:%S')}")
                 l_num = 1
                 # max_depth = max([s.count('/') for s in _resources_order])
                 # last_depth = 0
-                for r in _resources_order[::-1]:
-                    if r in resources:
+                _rs_ord = _resources_order[::-1]
+                _rs_with_neighbours = list(zip([None] + _rs_ord, _rs_ord, _rs_ord[1:] + [None]))
+                # addstr(l_num, 0, f"{_rs_with_neighbours}")
+                # l_num += 1
+                for (prev_r, r, next_r) in _rs_with_neighbours:
+                    if r not in resources:
+                        addstr(l_num, 0, colors('red')(f"Not found: {r}"))
+                        l_num += 1
+                    else:
                         if l_num > stdscr_height - 2:
                             break
-                        _r = resources[r]
-                        try:
-                            depth = r.count("/")
-                            start_char = "├"  # "└" if depth != last_depth else
-                            end_char = "┬" if "Stack" in _r['type'] else " "
-                            prefix = " " if _r['is_old'] else \
-                                (gen_progress_rotate(loop_counter) if "IN_PROGRESS" in _r['status'] else "✔")
-                            prefix += "   " * (depth-1) + (f"{start_char}──" if depth > 0 else "")
-                            prefix += end_char
 
-                            the_str = f"{_r['ts']} {prefix} {fmt_r(r, _r)}"
-                            addstr(l_num, 0, the_str)  # [:max_str_len]
-                            if "FAILED" in _r['status']:
-                                l_num += 1
-                                addstr(l_num, 0, f"         {prefix} --> {_r['reason']}")  # [:max_str_len]
-                            last_depth = depth
-                        except Exception as e:
-                            logging.error(f"Failed to stream status events - ({str(e)}) - console window too small?")
-                            sys.exit(1)
+                        _r = resources[r]
+                        _r_next = resources.get(next_r, None)
+                        _r_prev = resources.get(prev_r, None)
+
+                        if _r['is_old'] and skip_old:
+                            continue
+
+                        depth = r.count("/")
+                        start_char = "├" if _r_next and _r_next['depth'] == _r['depth'] else ("└" if _r_next and _r_next['depth'] > _r['depth'] else "┬")
+                        end_char = "┬" if "Stack" in _r['type'] else " "
+                        end_char = ("┬" if depth > 0 else "├") if "::Stack" in _r['type'] else " "
+                        prefix = " " if _r['is_old'] else \
+                            (gen_progress_rotate(loop_counter) if "IN_PROGRESS" in _r['status'] else "✔")
+                        prefix += "┆  " * (depth-1) + (f"{start_char}──" if depth > 0 else "")
+                        prefix += end_char
+                        # prefix += colors('red')(f"[{rs_left:>2d}]")
+
+                        the_str = f"{_r['ts']} {prefix} {fmt_r(r, _r)}"
+                        type_msg = fmt_type(_r)
+                        total_len = true_len(the_str + type_msg) + 2
+                        if total_len <= stdscr_width:
+                            the_str = the_str + ' ' + colors('dim_cyan')("." * (stdscr_width - total_len))
+                        else:
+                            max_len = (stdscr_width - 2 - true_len(type_msg))
+                            the_str = filter(lambda s: true_len(s) <= max_len, [the_str[:i] for i in range(len(the_str))][::-1]).__next__()
+                            the_str += "…" + Fore.RESET + Back.RESET + Style.RESET_ALL
+                        the_str += ' ' + colors('cyan')(fmt_type(_r))
+                        addstr(l_num, 0, the_str)  # [:max_str_len]
+                        if "FAILED" in _r['status']:
+                            l_num += 1
+                            addstr(l_num, 0, f"         {prefix} --> {_r['reason']}")  # [:max_str_len]
+                        last_depth = depth
                         l_num += 1
-                while l_num < stdscr_height - 2:
-                    addstr(l_num, 0, "--")
+                while l_num < stdscr_height:
+                    addstr(l_num, 0, " ")
                     l_num += 1
                 time.sleep(2)
 
             addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
             time.sleep(1.5)
         except Exception as e:
+            logging.error(f"Error in CFN stream: {e}, {repr(e)}")
+            sys.stderr.write(f"Error in CFN stream: {e}, {repr(e)}\n")
+            print_tb(e.__traceback__)
             with open('__manage_log', 'a') as f:
-                f.write('\n\n'.join([time.time(), str(e), repr(e), '']))
+                f.write(f"Exception ({e}) at {time.time()} while streaming CFN events")
+                f.write('\n\n'.join([str(time.time()), str(e), repr(e), '']))
             _e = e
+            raise e
 
-    with term.fullscreen():
+    if fullscreen:
+        with term.fullscreen():
+            _run()
+    else:
         _run()
 
     if _e is not None:
-        echo(f"Error in stream events: {_e}")
+        echo(f"Error in stream events: {_e}, {repr(_e)}")
+        sys.stderr.write(f"Error in stream events: {_e}, {repr(_e)}")
 
 
 def s3_upload(filepath, obj_key, public_read=True):
@@ -790,16 +864,18 @@ def get_evs(env_name):
 @click.option("--pkg-python/--no-pkg-python", default=True)
 @click.option("--use-last-uploaded", default=False, is_flag=True,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
+@click.option("--no-fullscreen", default=False, is_flag=True)
 @click.pass_context
-def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded):
+def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded, no_fullscreen):
     if set_params and update_params:
         raise Exception("Cannot set and update params at the same time. Use one.")
+    fullscreen = not no_fullscreen
 
     evs = get_evs(env_name)
     stack_name = evs.STACK_NAME
 
     if deploy:
-        await_in_prog(stack_name)
+        await_in_prog(stack_name, fullscreen=fullscreen)
 
     tmp_template_filename = gen_packaged_stack_tmp_filename(env_name)
     obj_key = f"templates/{env_name}" + os.path.split(evs.STACK_TEMPLATE)[-1]
@@ -831,7 +907,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     def gen_open_url_cmd(url):
         return "cmd.exe /c start {}".format(url)
 
-    await_in_prog(stack_name)
+    await_in_prog(stack_name, heading_prefix="AWAITING [UNEXPECTED]", fullscreen=fullscreen)
     stack_del_if_necessary(stack_name)
     if stack_exists(stack_name):
         sid = update_stack(stack_name, obj_url, params_aws)
@@ -839,7 +915,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
         sid = create_stack(stack_name, obj_url, params_aws)
     cfn_evt_url = gen_cfn_evt_url(sid)
     if watch:
-        stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+        stream_cfn_events(stack_name, heading_prefix="DEPLOY", fullscreen=fullscreen)
         _exists = stack_exists(stack_name)
         if not _exists or stack_failed(stack_name):
             if _exists:

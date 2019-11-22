@@ -6,6 +6,5 @@ __pycache__
 tmp*
 .in
 .out
-# just ignore anything starting with dunder (useful for temp otuputs, etc)
-__*
+__tmp*
 _manager_cache.yaml

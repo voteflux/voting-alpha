@@ -6,7 +6,7 @@ aws-sam-cli==0.31.1
 aws-sam-translator==1.15.1
 awscli==1.16.283
 binaryornot==0.4.4
-blessings==1.7
+blessed==1.16.1
 boto3==1.10.19
 botocore==1.13.19
 certifi==2019.9.11

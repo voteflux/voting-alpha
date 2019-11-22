@@ -1,2 +1,4 @@
 pymonad
 pynamodb
+attrdict
+

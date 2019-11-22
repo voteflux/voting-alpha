@@ -218,6 +218,7 @@ Resources:
 
   rLambdaLayer:
     Type: AWS::Serverless::LayerVersion
+    DeletionPolicy: Delete
     Properties:
       ContentUri: ./cr/common
       Description: layer for all/common deps for custom resources / lambdas
