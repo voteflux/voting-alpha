@@ -9,7 +9,7 @@ from pymonad import Nothing, Maybe, Just
 from pynamodb.indexes import GlobalSecondaryIndex, AllProjection
 from pynamodb.models import Model
 from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, UTCDateTimeAttribute, ListAttribute, MapAttribute, \
-    Attribute
+    Attribute, BinaryAttribute
 from pynamodb.constants import STRING
 import pynamodb.exceptions as pddb_ex
 from attrdict import AttrDict
@@ -26,19 +26,20 @@ def gen_table_name(name):
 class EnumAttribute(Attribute):
     attr_type = STRING
 
-    def __init__(self, enum_values: Enum[T], *args, **kwargs):
-        self.enum_values = list([e.value for e in enum_values])
+    def __init__(self, enum_cls, *args, **kwargs):
+        self.enum = enum_cls
+        self.enum_values = list([e.value for e in enum_cls])
         super().__init__(*args, **kwargs)
 
     def serialize(self, value):
-        if value not in self.enum_values:
+        if value not in self.enum:
             raise pddb_ex.PutError(f"Invalid value in EnumAttribute: {value}. Allowed values: {self.enum_values}")
         return str(value)
 
     def deserialize(self, value):
         if value not in self.enum_values:
             raise AttributeError(f"Invalid value for enum: {value}. Expected: {self.enum_values}")
-        return str(value)
+        return self.enum(value)
 
 
 class ModelEncoder(json.JSONEncoder):
@@ -118,19 +119,25 @@ Encrypt logs with users voting key
 
 
 class SessionState(Enum):
-    _010_SENT_OTP_EMAIL = "_010_SENT_OTP_EMAIL"
-    _020_CONFIRMED_OTP = "_020_CONFIRMED_OTP"
-    _030_SENT_BACKUP_EMAIL = "_030_SENT_BACKUP_EMAIL"
-    _040_MADE_ID_CONF_TX = "_040_MADE_ID_CONF_TX"
+    s010_SENT_OTP_EMAIL = "_010_SENT_OTP_EMAIL"
+    s020_CONFIRMED_OTP = "_020_CONFIRMED_OTP"
+    s030_SENT_BACKUP_EMAIL = "_030_SENT_BACKUP_EMAIL"
+    s040_MADE_ID_CONF_TX = "_040_MADE_ID_CONF_TX"
+
+
+class OtpState(MapAttribute):
+    not_valid_after: UTCDateTimeAttribute
+    not_valid_before: UTCDateTimeAttribute
+    otp_hash: BinaryAttribute()
 
 
 class SessionModel(BaseModel):
     class Meta:
         table_name = gen_table_name('session-db')
     session_id = UnicodeAttribute(hash_key=True)
-    session_token_hash = UnicodeAttribute()
-    eth_address = UnicodeAttribute()
+    session_anon_id = UnicodeAttribute()
     state = EnumAttribute(SessionState)
+    otp = OtpState()
 
 
 class QuestionModel(UidPrivate):

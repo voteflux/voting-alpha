@@ -234,7 +234,7 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                                                        update_start=update_start, parent=parent)
         else:
             raise e
-    resources = {}
+    resources = AttrDict()
     _res_ord = []
     root = None
 
@@ -266,7 +266,7 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
         is_old = update_start and evt['Timestamp'] < update_start
         t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
         seconds_ago = (datetime.now(timezone.utc) - evt['Timestamp']).total_seconds()
-        resources[r_name] = r = {'status': evt['ResourceStatus'],
+        resources[r_name] = r = AttrDict({'status': evt['ResourceStatus'],
                                  'ts': colors('dim_white')("   (old)") if is_old else f"{seconds_ago:>3.0f}s ago",
                                  'reason': evt.get('ResourceStatusReason', '<MISSING>'),
                                  'type': evt.get('ResourceType', ""),
@@ -275,7 +275,7 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                                  'parent': parent or "<Root>",
                                  'evt': evt,
                                  'depth': 0 if is_root else 1
-                                 }
+                                 })
         # n_old = len(list(filter(lambda k: resources[k]['is_old'] and resources[k]['parent'] == stack_name, resources)))
         if is_stack or not r['is_old'] or n_old_counter < max_old:
             _res_ord.insert(0, r_name)
@@ -288,7 +288,7 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
                     sub_name, recursive=recursive, update_start=update_start, parent=stack_name
                 )
                 _res_ord = [f"{r_name}/{n}" for n in sub_res_ord] + _res_ord
-                resources.update({f"{r_name}/{k}": dict(v, depth=v['depth'] + 1) for k, v in sub_res.items()})
+                resources.update({f"{r_name}/{k}": AttrDict(v, depth=v['depth'] + 1) for k, v in sub_res.items()})
 
     root_list_maybe = [] if root is None else [root]
     used = set(root_list_maybe)
@@ -406,6 +406,10 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                 # last_depth = 0
                 _rs_ord = _resources_order[::-1]
                 _rs_with_neighbours = list(zip([None] + _rs_ord, _rs_ord, _rs_ord[1:] + [None]))
+                for (prev_r, r, next_r) in _rs_with_neighbours:
+                    resources[r]['next'] = resources[next_r] if next_r else None
+                    resources[r]['prev'] = resources[prev_r] if prev_r else None
+
                 # addstr(l_num, 0, f"{_rs_with_neighbours}")
                 # l_num += 1
                 for (prev_r, r, next_r) in _rs_with_neighbours:
@@ -417,15 +421,13 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                             break
 
                         _r = resources[r]
-                        _r_next = resources.get(next_r, None)
-                        _r_prev = resources.get(prev_r, None)
 
                         if _r['is_old'] and skip_old:
                             continue
 
                         depth = _r['depth']
-                        next_depth = _r_next['depth'] if _r_next else 0
-                        prev_depth = _r_prev['depth'] if _r_prev else 0
+                        next_depth = _r.next['depth'] if _r.next else 0
+                        prev_depth = _r.prev['depth'] if _r.prev else 0
 
                         start_char = "├" if prev_depth <= depth == next_depth or prev_depth > depth \
                             else "└" if next_depth == 0 \
@@ -480,6 +482,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
     if fullscreen:
         with term.fullscreen():
             _run()
+        clear_term()
     else:
         _run()
 
@@ -868,6 +871,20 @@ def get_evs(env_name):
     return evs
 
 
+def get_env_name(env_name):
+    return env_name if not env_name[:5] == ".env." else env_name[5:]
+
+
+@cli.command(name='watch-env')
+@click.argument('env-name', type=click.STRING, default='dev')
+@click.option("--no-fullscreen", default=False, is_flag=True)
+def watch_env(env_name, no_fullscreen):
+    env_name = get_env_name(env_name)
+    evs = get_evs(env_name)
+    stack_name = evs.STACK_NAME
+    await_in_prog(stack_name, fullscreen=not no_fullscreen)
+
+
 @cli.command(name='sync-env')
 @click.argument('env-name', type=click.STRING, default='dev')
 @click.option("--nested-stack", "-ns", type=click.STRING, help="The resource name of the nested stack to update")
@@ -884,8 +901,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
         raise Exception("Cannot set and update params at the same time. Use one.")
     fullscreen = not no_fullscreen
 
-    env_name = env_name if not env_name[:5] == ".env." else env_name[5:]
-
+    env_name = get_env_name(env_name)
     evs = get_evs(env_name)
     stack_name = evs.STACK_NAME
 
@@ -947,11 +963,6 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
         print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
 
 
-lambdas = {
-    '': ''
-}
-
-
 def package_lambda(resource_name: str, lambda_path: str, layers: List[Path]):
     # todo: maybe should use working directory?
     root_dir = Path(os.path.dirname(os.path.realpath(__file__)))
@@ -975,6 +986,7 @@ def package_lambda(resource_name: str, lambda_path: str, layers: List[Path]):
 @click.argument('resource-name')
 @click.argument('nested', nargs=-1)
 def upload_func(env_name, resource_name, nested):
+    env_name = get_env_name(env_name)
     evs = get_evs(env_name)
     root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
     tmpls = [ (root_tmpl_path.parent, evs.STACK_NAME, cfn_tools.load_yaml(root_tmpl_path.read_text())) ]

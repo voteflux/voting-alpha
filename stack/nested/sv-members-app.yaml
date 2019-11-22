@@ -44,7 +44,7 @@ Globals:
 
 Resources:
 
-  rSessionsDB:
+  rSessionDB:
     Type: AWS::Serverless::SimpleTable
     Properties:
       TableName: !Sub ${pNamePrefix}-session-db
@@ -78,7 +78,15 @@ Resources:
             Path: /admin/add
             Method: post
             RestApiId: !Ref rMembersOnboardApi
-
+      Policies:
+        - Statement:
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+              - ssm:PutParameter
+              - ssm:DeleteParameter
+            Resource:
+              - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-members-api-*
 
   rMembersOnboardApi:
     Type: AWS::Serverless::Api

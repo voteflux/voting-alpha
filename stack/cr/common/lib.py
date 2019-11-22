@@ -213,7 +213,7 @@ def del_ssm_param(name):
     try:
         return ssm.delete_parameter(Name=name)
     except Exception as e:
-        if "ParameterNotFound" not in repr(e):
+        if "ParameterNotFound" not in str(e):
             raise e
 
 
