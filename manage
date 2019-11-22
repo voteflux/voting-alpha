@@ -21,8 +21,8 @@ except ModuleNotFoundError as e:
     logging.error("Try running `pip install -r _manager_lib/requirements.txt`")
     sys.exit(1)
 
-tracker = StateTracker()
-state = tracker.read()
+#tracker = StateTracker()
+#state = tracker.read()
 
 from colorama import init, Fore, Back, Style
 init()
