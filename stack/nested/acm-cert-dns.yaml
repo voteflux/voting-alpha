@@ -32,6 +32,16 @@ Conditions:
       - !Equals [ !Ref pDomain, '' ]
 
 
+Globals:
+  Function:
+    Runtime: python3.7
+    Timeout: 180
+    Environment:
+      Variables:
+        PYTHON_PATH: "/opt:/opt/deps"
+        PYTHONPATH: "/opt:/opt/deps"
+
+
 Resources:
 
   rACMApproverFunction:

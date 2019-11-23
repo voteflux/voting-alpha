@@ -35,14 +35,17 @@ Conditions:
   cFalse: !Equals [ 'true', 'false' ]
 
 
+
+
 Globals:
   Function:
     Runtime: python3.7
     Timeout: 180
     Environment:
       Variables:
+        PYTHON_PATH: "/opt:/opt/deps"
+        PYTHONPATH: "/opt:/opt/deps"
         pMembershipContract: !Ref pMembershipContract
-
   Api:
     EndpointConfiguration: REGIONAL
     Cors: !Sub "'*.${pApiDomainRaw}'"

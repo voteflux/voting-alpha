@@ -214,6 +214,17 @@ Conditions:
     !And [{ Condition: cCreateChaincodeStack }, !Equals [ !Ref pCreateMembersApp, 'true' ] ]
 
 
+
+Globals:
+  Function:
+    Runtime: python3.7
+    Timeout: 180
+    Environment:
+      Variables:
+        PYTHON_PATH: "/opt:/opt/deps"
+        PYTHONPATH: "/opt:/opt/deps"
+
+
 Resources:
 
   rLambdaLayer:
@@ -409,6 +420,7 @@ Resources:
       Handler: 'index.handler_params'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
       Timeout: 300
+      Environment:
 #      KmsKeyArn: !GetAtt rKmsAlias.Arn
       Policies:
         - Statement:

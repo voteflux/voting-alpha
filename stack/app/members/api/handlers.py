@@ -131,6 +131,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     if session.backup_hash.decode() != msg.payload.backup_hash:
         raise LambdaError(422, 'backup hash does not match', {"error": "BACKUP_HASH_MISMATCH"})
 
+    w3.eth.
     # todo: publish data to smart contract
     membership_txid = HexBytes("0x1234")
 
