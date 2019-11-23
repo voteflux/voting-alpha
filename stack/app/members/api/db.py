@@ -3,7 +3,7 @@ import datetime
 import os
 import uuid
 from base64 import b64encode, b64decode
-from typing import List
+from typing import List, Union
 
 import six
 
@@ -45,8 +45,8 @@ def bs_to_base64(bs: bytes) -> str:
     return b64encode(bs).decode()
 
 
-def hash_up(*args: str):
-    return _hash(b''.join(map(lambda a: _hash(a.encode()), args)))
+def hash_up(*args: Union[str, bytes]) -> bytes:
+    return _hash(b''.join(map(lambda a: _hash(a if type(a) is bytes else a.encode()), args)))
 
 
 def gen_session_anon_id(session_token: str, email_addr: str, eth_address: str) -> str:
@@ -59,21 +59,22 @@ def gen_otp_and_otp_hash(email_addr: str, eth_address: str, token: str):
 
 
 def gen_otp_hash(email_addr: str, eth_address: str, token: str, otp: str) -> bytes:
-    return hash_up(email_addr.lower(), eth_address.lower(), token, otp)
+    print('gen_otp_hash with args:', email_addr, eth_address, token, otp)
+    res = hash_up(email_addr.lower(), eth_address.lower(), token, otp)
+    print('gen_otp_hash result:', res)
+    return res
 
 
 @provide_jwt_secret
 async def new_session(email_addr, eth_address, jwt_secret=None) -> (bytes, SessionModel):
-    session_token = bs_to_base64(get_some_entropy()[:10])
+    session_token = bs_to_base64(get_some_entropy()[:16])
     session = SessionModel(
         session_anon_id=gen_session_anon_id(session_token, email_addr, eth_address),
         state=SessionState.s000_NEWLY_CREATED,
         not_valid_after=datetime.datetime.now() + datetime.timedelta(hours=24),
     )
-    print(session)
     jwt_token = jwt.encode({'token': session_token, 'anon_id': session.session_anon_id}, jwt_secret, algorithm='HS256').decode()
     session.save()
-    print(session)
     return jwt_token, session
 
 
@@ -82,8 +83,12 @@ async def verify_session_token(encoded_token, email_addr, eth_address, jwt_secre
     claim = AttrDict(jwt.decode(encoded_token, jwt_secret, algorithms=['HS256']))
     anon_id = gen_session_anon_id(claim.token, email_addr, eth_address)
     session = SessionModel.get_maybe(anon_id)
-    session_valid = session != Nothing and session.getValue().not_valid_after > now()
-    return claim if session_valid and anon_id == claim.anon_id else None
+    if session == Nothing:
+        return (None, None)
+    session = session.getValue()
+    session_valid = session.not_valid_after > now() > session.not_valid_before
+    log.warning(f"[DEBUG] {dict(session_valid=session_valid, session=session, nva=session.not_valid_after, nvb=session.not_valid_before, claim=claim)}")
+    return (claim, session) if session_valid and anon_id == claim.anon_id else (None, None)
 
 
 def get_session_otp(anon_id):

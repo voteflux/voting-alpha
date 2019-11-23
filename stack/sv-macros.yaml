@@ -30,7 +30,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: './cr/params'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'macro-eips.macro'
       FunctionName: !Sub sv-macro-eips
       Timeout: 30

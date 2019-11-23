@@ -5,7 +5,9 @@ from enum import Enum
 from typing import NamedTuple, Union
 
 import eth_utils
+import jwt
 import web3
+from api.models import RequestTypes
 from attrdict import AttrDict
 from eth_account.messages import SignableMessage
 from hexbytes import HexBytes
@@ -19,12 +21,6 @@ from .exceptions import LambdaError
 
 
 log = mk_logger('members-api')
-
-
-class RequestTypes(Enum):
-    ESTABLISH_SESSION = "ESTABLISH_SESSION"
-    PROVIDE_OTP = "PROVIDE_OTP"
-    RESEND_OTP = "RESEND_OTP"
 
 
 class Message(AttrDict):
@@ -84,14 +80,19 @@ def ensure_session(f):
                 raise LambdaError(403, "Invalid message.")
             if 'jwt' not in msg and msg.request != RequestTypes.ESTABLISH_SESSION.value:
                 raise LambdaError(403, "Invalid message.")
-            claim = None
+            claim = session = None
             if msg.request != RequestTypes.ESTABLISH_SESSION.value:
                 # verify token
-                claim = await verify_session_token(msg.jwt, msg.payload.email_addr, address)
-                if not claim:
+                try:
+                    claim, session = await verify_session_token(msg.jwt, msg.payload.email_addr, address)
+                except jwt.exceptions.InvalidSignatureError as e:
                     raise LambdaError(403, "Invalid jwt.")
+                if session is None:
+                    log.error(f"session: {session}, claim: {claim}")
+                    raise LambdaError(404, "Session not found.", {'error': "SESSION_NOT_FOUND"})
+
             # todo: more?
-            return await f(event, ctx, *args, msg=msg, eth_address=address, jwt_claim=claim, **kwargs)
+            return await f(event, ctx, *args, msg=msg, eth_address=address, jwt_claim=claim, session=session, **kwargs)
         try:
             return await inner2()
         except Exception as e:
@@ -116,7 +117,9 @@ class default_good_unless_exception(LambdaDecorator):
 
     def on_exception(self, exception):
         if type(exception) is LambdaError:
-            return {'statusCode': exception.code, 'body': exception.msg}
+            return {'statusCode': exception.code,
+                    'body': exception.client_response if exception.client_response else exception.msg
+                    }
         raise exception
 
 

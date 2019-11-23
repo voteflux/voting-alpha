@@ -98,7 +98,7 @@ Resources:
     Properties:
       Layers: [ !Ref pLambdaLayer ]
       CodeUri: '../cr/chaincode'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'chaincode.chaincode_handler'
       FunctionName: !Sub ${pNamePrefix}${pOffset}-chaincode-cr
       Timeout: 300

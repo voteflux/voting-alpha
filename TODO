@@ -1,10 +1,13 @@
-- members lambda onboard function impl
-  - API key auth
-  - location of eth endpoint in env var (see example ref in chaincode custom resource)
-  - create transaction via web3 contract
-  - return status and txid after receipt available
-  - note: if web3 stuff in chaincode py files are useful but can't be imported, just copy paste
-  - generic functionality should go in app/common - but not too difficult to refactor later
+- [ ] members lambda onboard function impl
+  - [x] API key auth
+  - [x] implement stateful onboarding process
+  - [ ] add eth endpoint to lambda env vars (there's an example in chaincode custom resource)
+  - [ ] create transaction via web3 contract
+  - [ ] return status and txid after receipt available - bonus: proof via merkle branch of tx inclusion in block
+
+- [ ] TLS in front of public nodes
+- [ ] multiple public nodes with ALB
+
+- [ ] light email template (or something slightly better than plaintext?) (note: i have code using Mako to do this at least in part already)
 
 
-- TLS in front of public nodes

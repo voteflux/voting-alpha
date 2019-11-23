@@ -14,6 +14,7 @@ from botocore.exceptions import ClientError
 from ecdsa import SigningKey, SECP256k1
 
 import boto3
+from env import env
 
 from eth_account.account import Account
 
@@ -70,7 +71,11 @@ def _hash_str(s: str) -> str:
 
 def get_some_entropy() -> bytes:
     '''Use various online sources + urandom to generate entropy'''
-    sources = [secrets.token_bytes(128), _hash(http_get("https://www.grc.com/passwords.htm"))]
+    sources = [
+        secrets.token_bytes(128),
+        os.urandom(128),
+        b'' if env.DEBUG else _hash(http_get("https://www.grc.com/passwords.htm"))
+    ]
     return _hash(b''.join(sources))
 
 

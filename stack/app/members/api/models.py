@@ -5,6 +5,8 @@ from enum import Enum
 from typing import TypeVar
 
 import toolz
+from api.lib import now
+from attrdict import AttrDict
 from pymonad import Nothing, Maybe, Just
 from pynamodb.indexes import GlobalSecondaryIndex, AllProjection
 from pynamodb.models import Model
@@ -75,7 +77,7 @@ class BaseModel(Model):
         return json.dumps(self, cls=ModelEncoder)
 
     def to_python(self):
-        return json.loads(self.to_json())
+        return AttrDict(json.loads(self.to_json()))
 
     def strip_private(self):
         return self.to_python()
@@ -121,6 +123,14 @@ Encrypt logs with users voting key
 '''
 
 
+class RequestTypes(Enum):
+    ESTABLISH_SESSION = "ESTABLISH_SESSION"
+    PROVIDE_OTP = "PROVIDE_OTP"
+    RESEND_OTP = "RESEND_OTP"
+    PROVIDE_BACKUP = "PROVIDE_BACKUP"
+    FINAL_CONFIRM = "FINAL_CONFIRM"
+
+
 class SessionState(Enum):
     s000_NEWLY_CREATED = "s000_NEWLY_CREATED"
     s010_SENT_OTP_EMAIL = "s010_SENT_OTP_EMAIL"
@@ -148,9 +158,11 @@ class SessionModel(BaseModel):
         region = env.AWS_REGION
     session_anon_id = UnicodeAttribute(hash_key=True)
     state = EnumAttribute(SessionState)
-    not_valid_before = UTCDateTimeAttribute(default=lambda: datetime.datetime.now())
+    not_valid_before = UTCDateTimeAttribute(default=lambda: now() - datetime.timedelta(minutes=1))
     not_valid_after = UTCDateTimeAttribute()
     otp = OtpState(null=True)
+    backup_hash = BinaryAttribute(null=True)
+    tx_proof = BinaryAttribute(null=True)
 
 
 class QuestionModel(UidPrivate):

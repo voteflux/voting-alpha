@@ -31,10 +31,13 @@ Parameters:
     Type: String
     
 
+Conditions:
+  cFalse: !Equals [ 'true', 'false' ]
+
 
 Globals:
   Function:
-    Runtime: python3.6
+    Runtime: python3.7
     Timeout: 180
     Environment:
       Variables:
@@ -49,10 +52,11 @@ Resources:
 
   rSessionDB:
     Type: AWS::Serverless::SimpleTable
+    DeletionPolicy: Delete
     Properties:
       TableName: !Sub ${pNamePrefix}-session-db
       PrimaryKey:
-        Name: session_id
+        Name: session_anon_id
         Type: String
       SSESpecification:
         SSEEnabled: true
@@ -70,7 +74,7 @@ Resources:
           pNamePrefix: !Ref pNamePrefix
           pAdminEmail: !Ref pAdminEmail
       Handler: api.message_handler
-      Runtime: python3.6
+      Runtime: python3.7
       Layers:
         - !Ref pLambdaLayer
 #        - !Ref rMembersLayer

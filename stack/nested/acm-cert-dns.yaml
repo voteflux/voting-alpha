@@ -42,7 +42,7 @@ Resources:
       FunctionName: !Sub ${pNamePrefix}-acm-creation-and-dns-lambda
       Handler: index.acm_certificate
       MemorySize: 128
-      Runtime: python3.6
+      Runtime: python3.7
       Timeout: 900
       Policies:
         - Version: "2012-10-17"

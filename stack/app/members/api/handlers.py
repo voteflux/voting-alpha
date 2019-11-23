@@ -1,21 +1,26 @@
 import asyncio
+import base64
 import datetime
 import json
+import os
 
+import jwt
 from eth_account.messages import encode_defunct, SignableMessage
 import eth_utils
 from api.exceptions import LambdaError
 from attrdict import AttrDict
 from hexbytes import HexBytes
 from pymonad.Maybe import Nothing
+from pynamodb.attributes import BooleanAttribute
+from utils import can_base64_decode
 from .common.lib import _hash
 from web3.auto import w3
-from .send_mail import send_email
-from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id
+from .send_mail import send_email, format_backup
+from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, bs_to_base64, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap
 from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, encode_sv_signed_msg, \
     verifyDictKeys, encode_and_sign_msg
-from .lib import mk_logger
+from .lib import mk_logger, now
 from .env import env
 
 log = mk_logger('members-onboard')
@@ -23,42 +28,25 @@ log = mk_logger('members-onboard')
 
 @post_common
 @ensure_session
-async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim):
+async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, session):
     _h = {
         RequestTypes.ESTABLISH_SESSION.value: establish_session,
         RequestTypes.PROVIDE_OTP.value: provide_otp,
         RequestTypes.RESEND_OTP.value: resend_otp,
+        RequestTypes.PROVIDE_BACKUP.value: send_backup_email,
+        RequestTypes.FINAL_CONFIRM.value: confirm_and_finalize_onboarding,
     }
-    return await _h[msg.request](event, ctx, msg, eth_address, jwt_claim)
+    return await _h[msg.request](event, ctx, msg, eth_address, jwt_claim, session)
 
 
-async def resend_otp(event, ctx, msg, eth_address, jwt_claim, *args, **kwargs):
-    raise LambdaError(555, 'unimplemented')
-
-
-async def provide_otp(event, ctx, msg, eth_address, jwt_claim, *args, **kwargs):
-    verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
-    session_anon_id = gen_session_anon_id(jwt_claim.token, msg.payload.email_addr, eth_address)
-    session_m = SessionModel.get_maybe(session_anon_id)
-    if session_m == Nothing:
-        raise LambdaError(404, 'OTP not found.')
-    session = session_m.getValue()
-    verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
-    print(session.to_python())
-    print('original msg:', msg)
-
-    raise LambdaError(555, 'unimplemented')
-
-
-async def establish_session(event, ctx, msg, eth_address, jwt_claim, *args, **kwargs):
+async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, 'verify ethereum addresses match')
 
-    print(msg, msg.payload.email_addr, eth_address)
     sess = await new_session(msg.payload.email_addr, eth_address)
-    print(sess)
     jwt_token, session = sess
-    otp, otp_hash = gen_otp_and_otp_hash(msg.payload.email_addr, eth_address, jwt_token)
+    claim = AttrDict(jwt.decode(jwt_token, algorithms=['HS256'], verify=False))
+    otp, otp_hash = gen_otp_and_otp_hash(msg.payload.email_addr, eth_address, claim.token)
 
     session.update([
         SessionModel.otp.set(OtpState(
@@ -80,15 +68,79 @@ Your OTP is:
             SessionModel.otp.emails_sent_at.set(SessionModel.otp.emails_sent_at.prepend([TimestampMap()])),
             SessionModel.state.set(SessionState.s010_SENT_OTP_EMAIL)
         ])
-        print('session updated!:', session.to_python())
-        return { 'jwt': jwt_token, 'otp_unsafe_todo_remove': otp }
+        log.error("** ** ** OTP UNSAFE RETURNED IN PAYLOAD ** ** **")
+        return {'result': 'success', 'jwt': jwt_token, 'otp_unsafe_todo_remove': otp}
 
 
+async def resend_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    raise LambdaError(555, 'unimplemented')
 
 
+async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
+    verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
+
+    if session.otp.incorrect_attempts >= 10:
+        raise LambdaError(429, 'too many incorrect otp attempts', {'error': "TOO_MANY_OTP_ATTEMPTS"})
+
+    otp_hash = gen_otp_hash(msg.payload.email_addr, eth_address, jwt_claim.token, msg.payload.otp)
+    if bs_to_base64(otp_hash) != session.otp.otp_hash.decode():
+        session.update([SessionModel.otp.incorrect_attempts.set(SessionModel.otp.incorrect_attempts + 1)])
+        if session.otp.incorrect_attempts >= 10:
+            raise LambdaError(429, 'too many incorrect otp attempts', {'error': "TOO_MANY_OTP_ATTEMPTS"})
+        raise LambdaError(422, "otp hash didn't match", {'error': "OTP_MISMATCH"})
+
+    session.update([
+        SessionModel.otp.succeeded.set(SessionModel.otp.succeeded.set(True)),
+        SessionModel.state.set(SessionState.s020_CONFIRMED_OTP)
+    ])
+
+    return {'result': 'success'}
 
 
+async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
+    verify(session.state == SessionState.s020_CONFIRMED_OTP, 'expected state')
+    verify(len(msg.payload.encrypted_backup) < 2000, 'expected size of backup')
+    verify(can_base64_decode(msg.payload.encrypted_backup), 'backup is base64 encoded')
 
+    send_email(to_addrs=[msg.payload.email_addr], subject="Blockchain Australia AGM Elections Voting Identity Backup",
+               body_txt=f"""
+Below you will find a backup of your voting identity for use in the Blockchain Australia 2019 AGM.
+Combined with the password shown to you during the registration stage, this backup provides an
+important means of support, audit, and dispute resolution if such needs would ever arise.
+
+It is important you retain the password shown to you on your voting device.
+
+{format_backup(msg.payload.encrypted_backup)}
+""")
+
+    backup_hash = _hash(msg.payload.encrypted_backup.encode())
+
+    session.update([
+        SessionModel.state.set(SessionState.s030_SENT_BACKUP_EMAIL),
+        SessionModel.backup_hash.set(backup_hash)
+    ])
+    return {'result': 'success'}
+
+
+async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    verify(verifyDictKeys(msg.payload, ['email_addr', 'backup_hash']), 'payload keys')
+    verify(session.state == SessionState.s030_SENT_BACKUP_EMAIL, 'expected state')
+
+    if session.backup_hash.decode() != msg.payload.backup_hash:
+        raise LambdaError(422, 'backup hash does not match', {"error": "BACKUP_HASH_MISMATCH"})
+
+    # todo: publish data to smart contract
+    membership_txid = HexBytes("0x1234")
+
+    # todo: get proof of tx in blockchain via merkle branch to block header
+
+    session.update([
+        SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
+        SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
+    ])
+    return {'result': 'success'}
 
 
 async def test_establish_session():
@@ -134,7 +186,14 @@ def test_establish_session_via_handler():
     r = message_handler(mk_msg(msg_2, sig_2.signature), ctx)
     print(r)
 
+    encrypted_backup = bs_to_base64(os.urandom(512))
 
+    msg_3, _, sig_3 = encode_and_sign_msg(AttrDict(
+        payload={'email_addr': test_email_addr, 'encrypted_backup': encrypted_backup},
+        jwt=jwt_token, request=RequestTypes.PROVIDE_BACKUP.value
+    ), acct)
+
+    r = message_handler(mk_msg(msg_3, sig_3.signature), ctx)
 
 
 def tests(loop):

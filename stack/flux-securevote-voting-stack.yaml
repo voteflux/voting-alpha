@@ -288,7 +288,7 @@ Resources:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: './cr/params'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'index.handler_bucket_cleanup'
       FunctionName: !Sub ${NamePrefix}-bucket-cleanup-cr
       Timeout: 30
@@ -405,7 +405,7 @@ Resources:
     Properties:
       Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'index.handler_params'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
       Timeout: 300
@@ -458,7 +458,7 @@ Resources:
     Properties:
       Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'index.handler_priv_keys'
       FunctionName: !Sub ${NamePrefix}-eth-priv-keys-cr
       Timeout: 30
@@ -495,7 +495,7 @@ Resources:
     Properties:
       Layers: [ !Ref rLambdaLayer ]
       CodeUri: './cr/params'
-      Runtime: python3.6
+      Runtime: python3.7
       Handler: 'index.handler_prevent_nameprefix_change'
       FunctionName: !Sub ${NamePrefix}-nameprefix-static-cr
       Timeout: 30
