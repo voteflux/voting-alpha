@@ -106,6 +106,9 @@ Resources:
           Function: $sv-index.setDEditor
           Inputs: [ $democ-hash, _members, 'bool:true' ]
           Output: DemocAddAdminTxid
+        - Name: token-abbr-lookup
+          Type: deploy
+          Output: TokenAbbrLookupAddr
 
 
   rChaincodeLambda:
@@ -135,6 +138,8 @@ Resources:
               - ssm:DescribeParameters
             Resource:
               - '*'
+
+
 Outputs:
   oMembershipAddr:
     Value: !GetAtt rChaincodeCr.MembershipAddr
@@ -150,4 +155,6 @@ Outputs:
     Value: !GetAtt rChaincodeCr.DemocAddAdminTxid
   oBBFarmAux2Addr:
     Value: !GetAtt rChaincodeCr.BBFarmAux2Addr
+  oTokenAbbrLookupAddr:
+    Value: !GetAtt rChaincodeCr.TokenAbbrLookupAddr
 

@@ -701,3 +701,8 @@ Outputs:
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAddr
   oBBFarmAux2Addr:
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAux2Addr
+  oTokenAbbrLookupAddr:
+    Value: !GetAtt rChaincodeStack.Outputs.oTokenAbbrLookupAddr
+
+  oApiUrl:
+    Value: !Sub "https://${rApiBootstrapStack.Outputs.oApiDomain}/"

@@ -29,6 +29,7 @@ log = mk_logger('members-onboard')
 @post_common
 @ensure_session
 async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, session):
+    log.warning(f"** UNSAFE - DEBUG ** - {event['body']}")
     _h = {
         RequestTypes.ESTABLISH_SESSION.value: establish_session,
         RequestTypes.PROVIDE_OTP.value: provide_otp,
@@ -76,6 +77,22 @@ async def resend_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **
     raise LambdaError(555, 'unimplemented')
 
 
+"""
+Example payload:
+{
+  // NOTE: the value of 'msg' below is a string, not an object.
+  'msg': '{
+    "payload": {
+      "email_addr": "max-test@xk.io", 
+      "otp": "77549721"
+    }, 
+    "jwt": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IkZvdXVBRVlJWEl3ZlBmOFQxMUJQcEE9PSIsImFub25faWQiOiJCWnd2T1V1VkhkWXU5TUtXYWVocytGUVhuUzhCTXJGSDhaUm1Qbzg3aWZydUdwWkhEN2dDdzM0WG1idVB0N3hQQ2N4WUVmZFVRQ2xEZWlNaklMWW54QT09In0.Wxe5hDmZgDRlT1sZ2cdinuw8RdugfC5aIptTRVEme14", 
+    "request": "PROVIDE_OTP"
+  }', 
+  'sig': '0xaaefcc8170a923a5ed4c3870cd2a7fa8185f5982ccdb0cc907f0577b7c104c2042e45e8e50b1fe733a9c67e5ee48047fab83ecf6b52e01c8156628c21a998e201b'
+}
+
+"""
 async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
     verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
@@ -98,6 +115,20 @@ async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, *
     return {'result': 'success'}
 
 
+'''
+Example payload:
+{
+  'msg': '{
+    "payload": {
+      "email_addr": "max-test@xk.io", 
+      "encrypted_backup": "nDvW7Rik5IsZoKO7c...(lots of bytes)...A5y98TCkqiLPw="
+    }, 
+    "jwt": "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9.eyJ0b2tlbiI6IkZvdXVBRVlJWEl3ZlBmOFQxMUJQcEE9PSIsImFub25faWQiOiJCWnd2T1V1VkhkWXU5TUtXYWVocytGUVhuUzhCTXJGSDhaUm1Qbzg3aWZydUdwWkhEN2dDdzM0WG1idVB0N3hQQ2N4WUVmZFVRQ2xEZWlNaklMWW54QT09In0.Wxe5hDmZgDRlT1sZ2cdinuw8RdugfC5aIptTRVEme14",
+    "request": "PROVIDE_BACKUP"
+  }', 
+  'sig': '0x7faf86494a9c882be60105c16f0e701043797481831762646709b87301e5130e13568d1c36ac85b9976545c23fdaba135f68c7fefa275a41b30c51ee66456eda1c'
+}
+'''
 async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
     verify(session.state == SessionState.s020_CONFIRMED_OTP, 'expected state')

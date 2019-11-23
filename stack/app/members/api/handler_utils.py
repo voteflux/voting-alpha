@@ -71,7 +71,10 @@ def ensure_session(f):
             signable_msg = encode_sv_signed_msg(eth_utils.to_bytes(text=msg_encoded))
             print(data.sig)
             signature_bytes = eth_utils.to_bytes(hexstr=data.sig)
-            address = w3.eth.account.recover_message(signable_msg, signature=signature_bytes)
+            try:
+                address = w3.eth.account.recover_message(signable_msg, signature=signature_bytes)
+            except Exception as e:
+                log.warning(f"Exception occured ")
             if not eth_utils.is_address(address):
                 raise LambdaError(403, "Invalid signature.")
             msg: Message = AttrDict(json.loads(msg_encoded))

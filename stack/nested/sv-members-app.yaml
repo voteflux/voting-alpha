@@ -29,6 +29,11 @@ Parameters:
 
   pAdminEmail:
     Type: String
+
+  pBasePathName:
+    Description: The url fragment between he end of the domain name and the path specified by AWS::Serverless::Functions
+    Default: members
+    Type: String
     
 
 Conditions:
@@ -66,10 +71,10 @@ Resources:
 
   # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
   # and logs any arbitrary data needed for later audit
-  rAdminAddMember:
+  rFMemberRegister:
     Type: AWS::Serverless::Function
     Properties:
-      FunctionName: !Sub ${pNamePrefix}-admin-add-member
+      FunctionName: !Sub ${pNamePrefix}-member-registration
       CodeUri: ../app/members
       Environment:
         Variables:
@@ -86,7 +91,7 @@ Resources:
         web:
           Type: Api
           Properties:
-            Path: /admin/add
+            Path: /register
             Method: post
             RestApiId: !Ref rMembersOnboardApi
       Policies:
@@ -111,7 +116,7 @@ Resources:
     DependsOn:
       - rMembersOnboardApiStage  # created via SAM transform
     Properties:
-      BasePath: members
+      BasePath: !Ref pBasePathName
       DomainName: !Ref pApiDomain
       Stage: !Ref pApiStageName
       RestApiId: !Ref rMembersOnboardApi
@@ -121,6 +126,8 @@ Outputs:
 #  oMembersLayer:
 #    Value: !Ref rMembersLayer
   oAdminAddMemberFunction:
-    Value: !Ref rAdminAddMember
+    Value: !Ref rFMemberRegister
   oMembersOnboardApi:
     Value: !Ref rMembersOnboardApi
+  oMembersBasePath:
+    Value: !Ref pBasePathName
