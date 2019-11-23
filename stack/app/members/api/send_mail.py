@@ -6,7 +6,7 @@ import logging
 
 # from mako.template import Template
 from utils import chunk
-from .env import env
+from .env import get_env
 from .lib import mk_logger
 
 ses = boto3.client('ses', region_name='ap-southeast-2')
@@ -14,7 +14,7 @@ log = mk_logger('email')
 
 
 default_params = {
-    'source': env.get('pAdminEmail', 'elections@api.secure.vote')
+    'source': get_env('pAdminEmail', 'elections@api.secure.vote')
 }
 
 

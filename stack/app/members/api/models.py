@@ -14,15 +14,15 @@ from pynamodb.attributes import UnicodeAttribute, BooleanAttribute, UTCDateTimeA
     Attribute, BinaryAttribute, NumberAttribute
 from pynamodb.constants import STRING
 import pynamodb.exceptions as pddb_ex
-from .env import env
+from .env import get_env
 
 
 T = TypeVar('T')
-env.AWS_REGION = "ap-southeast-2"
+os.environ['AWS_REGION'] = "ap-southeast-2"
 
 
 def gen_table_name(name):
-    return f"{env.pNamePrefix}-{name}"
+    return f"{get_env('pNamePrefix')}-{name}"
 
 
 class EnumAttribute(Attribute):
@@ -156,7 +156,7 @@ class OtpState(MapAttribute):
 class SessionModel(BaseModel):
     class Meta:
         table_name = gen_table_name('session-db')
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
     session_anon_id = UnicodeAttribute(hash_key=True)
     state = EnumAttribute(SessionState)
     not_valid_before = UTCDateTimeAttribute(default=lambda: now() - datetime.timedelta(minutes=1))
@@ -169,7 +169,7 @@ class SessionModel(BaseModel):
 class QuestionModel(UidPrivate):
     class Meta:
         table_name = gen_table_name("qanda-questions-ddb")
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
 
     qid = UnicodeAttribute(hash_key=True)
     uid = UnicodeAttribute()
@@ -190,7 +190,7 @@ class UserQuestionLogEntry(MapAttribute):
 class UserQuestionsModel(BaseModel):
     class Meta:
         table_name = gen_table_name("qanda-user-qs-ddb")
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
 
     uid = UnicodeAttribute(hash_key=True)
     qs = ListAttribute(of=UserQuestionLogEntry, default=list)
@@ -204,7 +204,7 @@ class GenericPointer(MapAttribute):
 class ReplyIdsByQid(BaseModel):
     class Meta:
         table_name = gen_table_name("qanda-reply-ids-ddb")
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
 
     qid = UnicodeAttribute(hash_key=True)
     rids = ListAttribute(of=GenericPointer, default=list)
@@ -213,7 +213,7 @@ class ReplyIdsByQid(BaseModel):
 class ReplyIdsByUid(BaseModel):
     class Meta:
         table_name = gen_table_name("qanda-reply-ids-by-uid-ddb")
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
 
     uid = UnicodeAttribute(hash_key=True)
     rids = ListAttribute(of=GenericPointer, default=list)
@@ -222,7 +222,7 @@ class ReplyIdsByUid(BaseModel):
 class Reply(UidPrivate):
     class Meta:
         table_name = gen_table_name("qanda-replies-ddb")
-        region = env.AWS_REGION
+        region = get_env('AWS_REGION')
 
     rid = UnicodeAttribute(hash_key=True)
     qid = UnicodeAttribute()

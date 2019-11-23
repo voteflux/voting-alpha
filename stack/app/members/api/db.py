@@ -18,15 +18,15 @@ from .common.lib import _hash, get_some_entropy
 from pymonad import Maybe
 from .models import SessionState, SessionModel, OtpState
 from .lib import mk_logger, now
+from .env import get_env
 
 log = mk_logger('db')
-env = AttrDict(os.environ)
 
 
 def provide_jwt_secret(f):
     async def inner(*args, **kwargs):
         ssm = boto3.client('ssm')
-        ssm_jwt = f'sv-{env.pNamePrefix}-members-api-jwt-secret'
+        ssm_jwt = f'sv-{get_env("pNamePrefix")}-members-api-jwt-secret'
         try:
             jwt_secret = b64decode(ssm.get_parameter(Name=ssm_jwt, WithDecryption=True)['Parameter']['Value'])
         except Exception as e:
@@ -84,7 +84,7 @@ async def verify_session_token(encoded_token, email_addr, eth_address, jwt_secre
     anon_id = gen_session_anon_id(claim.token, email_addr, eth_address)
     session = SessionModel.get_maybe(anon_id)
     if session == Nothing:
-        return (None, None)
+        return None, None
     session = session.getValue()
     session_valid = session.not_valid_after > now() > session.not_valid_before
     log.warning(f"[DEBUG] {dict(session_valid=session_valid, session=session, nva=session.not_valid_after, nvb=session.not_valid_before, claim=claim)}")

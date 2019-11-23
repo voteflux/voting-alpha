@@ -14,7 +14,6 @@ from hexbytes import HexBytes
 from lambda_decorators import async_handler, dump_json_body, load_json_body, LambdaDecorator, after
 from .db import verify_session_token
 from .lib import mk_logger
-from .env import env
 from web3.auto import w3
 
 from .exceptions import LambdaError
