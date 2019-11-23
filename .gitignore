@@ -8,3 +8,4 @@ tmp*
 .out
 __tmp*
 _manager_cache.yaml
+.env.*
