@@ -18,6 +18,7 @@ from .env import env
 
 
 T = TypeVar('T')
+env.AWS_REGION = "ap-southeast-2"
 
 
 def gen_table_name(name):

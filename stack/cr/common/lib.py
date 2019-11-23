@@ -74,7 +74,7 @@ def get_some_entropy() -> bytes:
     sources = [
         secrets.token_bytes(128),
         os.urandom(128),
-        b'' if env.DEBUG else _hash(http_get("https://www.grc.com/passwords.htm"))
+        b'' if env.get('DEBUG', False) else _hash(http_get("https://www.grc.com/passwords.htm"))
     ]
     return _hash(b''.join(sources))
 
