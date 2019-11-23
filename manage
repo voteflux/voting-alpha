@@ -25,7 +25,7 @@ except ModuleNotFoundError as e:
 tracker = StateTracker()
 state = tracker.read()
 
-from attrdict import AttrDict
+from attrdict import AttrDict, AttrDefault
 from colorama import init, Fore, Back, Style
 init()
 
@@ -958,7 +958,16 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
             print_output("Deploy Success! {}".format(cfn_evt_url))
             deets = get_stack_details(stack_name)
 
-            print_output(f"Outputs: {json.dumps(cfn_outputs_to_dict(deets['Outputs']), indent=2)}")
+            outputs = AttrDefault(lambda: '<< UNKNOWN OUTPUT >>', cfn_outputs_to_dict(deets['Outputs']))
+            print_output(f"Outputs: {json.dumps(dict(outputs.items()), indent=2)}")
+            print_output(f"""Env Vars for UI:
+
+WEB3_PROVIDER={outputs.oPublicNode0Url}
+DEMOC_HASH={outputs.oDemocHash}
+INDEX_CONTRACT_ADDR={outputs.oIndexAddr}
+AUX_CONTRACT_ADDR={outputs.oBBFarmAux2Addr}
+
+""")
     else:
         print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
 

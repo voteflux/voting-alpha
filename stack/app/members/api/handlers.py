@@ -131,6 +131,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     if bs_to_base64(session.backup_hash) != msg.payload.backup_hash:
         raise LambdaError(422, 'backup hash does not match', {"error": "BACKUP_HASH_MISMATCH"})
 
+    # todo: we need to use some kind of sync key to avoid race conditions in the onboarding process
+
     # w3.eth.
     # todo: publish data to smart contract
     membership_txid = HexBytes("0x1234")
@@ -141,6 +143,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
         SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
     ])
+
+    # todo: we need to mark the operation finalized ASAP after issuing the tx
 
     log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
     return {'result': 'success'}

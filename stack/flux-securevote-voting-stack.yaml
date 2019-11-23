@@ -699,3 +699,5 @@ Outputs:
     Value: !GetAtt rChaincodeStack.Outputs.oIndexAddr
   oBBFarmAddr:
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAddr
+  oBBFarmAux2Addr:
+    Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAux2Addr

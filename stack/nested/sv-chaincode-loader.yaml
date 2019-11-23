@@ -65,15 +65,18 @@ Resources:
           Output: PaymentsAddr
         - Name: sv-comm-auction
           Type: deploy
-        - Inputs:
+        - Name: sv-index
+          Inputs:
             - $sv-backend
             - $sv-payments
             - ^addr-ones
             - $bbfarm
             - $sv-comm-auction
-          Name: sv-index
           Type: deploy
           Output: IndexAddr
+        - Name: bbfarm-aux-2
+          Type: deploy
+          Output: BBFarmAux2Addr
         - Name: ix-backend-perms
           Function: $sv-backend.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
@@ -102,6 +105,7 @@ Resources:
           Type: calltx
           Function: $sv-index.setDEditor
           Inputs: [ $democ-hash, _members, 'bool:true' ]
+          Output: DemocAddAdminTxid
 
 
   rChaincodeLambda:
@@ -142,4 +146,8 @@ Outputs:
     Value: !GetAtt rChaincodeCr.IndexAddr
   oBBFarmAddr:
     Value: !GetAtt rChaincodeCr.BBFarmAddr
+  oDemocAddAdminTxid:
+    Value: !GetAtt rChaincodeCr.DemocAddAdminTxid
+  oBBFarmAux2Addr:
+    Value: !GetAtt rChaincodeCr.BBFarmAux2Addr
 
