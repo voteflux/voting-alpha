@@ -13,11 +13,12 @@ import jwt
 import eth_utils
 import web3
 from attrdict import AttrDict
+from hexbytes import HexBytes
 from pymonad.Maybe import Nothing
 from .common.lib import _hash, get_some_entropy
 from pymonad import Maybe
 from .models import SessionState, SessionModel, OtpState
-from .lib import mk_logger, now
+from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
 
 log = mk_logger('db')
@@ -41,12 +42,8 @@ def provide_jwt_secret(f):
     return inner
 
 
-def bs_to_base64(bs: bytes) -> str:
-    return b64encode(bs).decode()
-
-
 def hash_up(*args: Union[str, bytes]) -> bytes:
-    return _hash(b''.join(map(lambda a: _hash(a if type(a) is bytes else a.encode()), args)))
+    return _hash(b''.join(map(lambda a: _hash(a if type(a) in [bytes, HexBytes] else a.encode()), args)))
 
 
 def gen_session_anon_id(session_token: str, email_addr: str, eth_address: str) -> str:

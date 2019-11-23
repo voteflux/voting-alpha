@@ -16,11 +16,11 @@ from utils import can_base64_decode
 from .common.lib import _hash
 from web3.auto import w3
 from .send_mail import send_email, format_backup
-from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, bs_to_base64, hash_up
+from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap
 from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, encode_sv_signed_msg, \
     verifyDictKeys, encode_and_sign_msg
-from .lib import mk_logger, now
+from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
 
 log = mk_logger('members-onboard')
@@ -128,7 +128,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     verify(verifyDictKeys(msg.payload, ['email_addr', 'backup_hash']), 'payload keys')
     verify(session.state == SessionState.s030_SENT_BACKUP_EMAIL, 'expected state')
 
-    if session.backup_hash.decode() != msg.payload.backup_hash:
+    if bs_to_base64(session.backup_hash) != msg.payload.backup_hash:
         raise LambdaError(422, 'backup hash does not match', {"error": "BACKUP_HASH_MISMATCH"})
 
     # w3.eth.
@@ -141,6 +141,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
         SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
     ])
+
+    log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
     return {'result': 'success'}
 
 
@@ -195,6 +197,16 @@ def test_establish_session_via_handler():
     ), acct)
 
     r = message_handler(mk_msg(msg_3, sig_3.signature), ctx)
+
+    backup_hash = bs_to_base64(_hash(encrypted_backup.encode()))
+    msg_4, _, sig_4 = encode_and_sign_msg(AttrDict(
+        payload={'email_addr': test_email_addr, 'backup_hash': backup_hash},
+        jwt=jwt_token, request=RequestTypes.FINAL_CONFIRM.value
+    ), acct)
+
+    r = message_handler(mk_msg(msg_4, sig_4.signature), ctx)
+
+    print('final done?', r)
 
 
 def tests(loop):

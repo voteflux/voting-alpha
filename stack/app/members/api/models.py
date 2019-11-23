@@ -5,7 +5,7 @@ from enum import Enum
 from typing import TypeVar
 
 import toolz
-from api.lib import now
+from api.lib import now, bs_to_base64
 from attrdict import AttrDict
 from pymonad import Nothing, Maybe, Just
 from pynamodb.indexes import GlobalSecondaryIndex, AllProjection
@@ -51,7 +51,7 @@ class ModelEncoder(json.JSONEncoder):
         elif isinstance(obj, datetime.datetime):
             return obj.isoformat()
         elif isinstance(obj, bytes):
-            return obj.decode()
+            return bs_to_base64(obj)
         elif isinstance(obj, SessionState):
             return obj.value
         return json.JSONEncoder.default(self, obj)
