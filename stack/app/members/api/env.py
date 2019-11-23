@@ -1,7 +1,7 @@
 import os
 from collections import defaultdict
 
-from attrdict import AttrDict
+from attrdict import AttrDefault
 
-env = AttrDict(defaultdict(lambda: None, **os.environ))
+env = AttrDefault(lambda: None, os.environ)
 env.AWS_REGION = env.get('AWS_REGION', 'ap-southeast-2')
