@@ -175,7 +175,7 @@ class VoterEnrolmentModel(BaseModel):
         region = get_env("AWS_REGION")
     email_addr = UnicodeAttribute(hash_key=True)
     first_name = UnicodeAttribute()
-    weighting = NumberAttribute()
+    weightingMap = MapAttribute()
     claimed = BooleanAttribute()
 
 

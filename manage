@@ -264,7 +264,7 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
         is_root = root == r_name
         is_stack = evt['ResourceType'] == "AWS::CloudFormation::Stack"
         is_old = update_start and evt['Timestamp'] < update_start
-        t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
+        # t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
         seconds_ago = (datetime.now(timezone.utc) - evt['Timestamp']).total_seconds()
         resources[r_name] = r = AttrDict({'status': evt['ResourceStatus'],
                                  'ts': colors('dim_white')("   (old)") if is_old else f"{seconds_ago:>3.0f}s ago",

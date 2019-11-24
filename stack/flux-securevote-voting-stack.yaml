@@ -125,40 +125,42 @@ Parameters:
       - t3.micro
       - t2.small
       - t2.medium
-      - t2.large
-      - t2.xlarge
-      - t2.2xlarge
-      - m3.medium
-      - m3.large
-      - m3.xlarge
-      - m3.2xlarge
-      - m4.large
-      - m4.xlarge
-      - m4.2xlarge
-      - m4.4xlarge
-      - m4.10xlarge
-      - r3.large
-      - r3.xlarge
-      - r3.2xlarge
-      - r3.4xlarge
-      - r3.8xlarge
-      - r4.large
-      - r4.xlarge
-      - r4.2xlarge
-      - r4.4xlarge
-      - r4.8xlarge
-      - r4.16xlarge
-      - c4.large
-      - c4.xlarge
-      - c4.2xlarge
-      - c4.4xlarge
-      - c4.8xlarge
-      - c5.large
-      - c5.xlarge
-      - c5.2xlarge
-      - c5.4xlarge
-      - c5.9xlarge
-      - c5.18xlarge
+#      - t2.large
+#      - t2.xlarge
+#      - t2.2xlarge
+      - t3.small
+      - t3.medium
+#      - m3.medium
+#      - m3.large
+#      - m3.xlarge
+#      - m3.2xlarge
+#      - m4.large
+#      - m4.xlarge
+#      - m4.2xlarge
+#      - m4.4xlarge
+#      - m4.10xlarge
+#      - r3.large
+#      - r3.xlarge
+#      - r3.2xlarge
+#      - r3.4xlarge
+#      - r3.8xlarge
+#      - r4.large
+#      - r4.xlarge
+#      - r4.2xlarge
+#      - r4.4xlarge
+#      - r4.8xlarge
+#      - r4.16xlarge
+#      - c4.large
+#      - c4.xlarge
+#      - c4.2xlarge
+#      - c4.4xlarge
+#      - c4.8xlarge
+#      - c5.large
+#      - c5.xlarge
+#      - c5.2xlarge
+#      - c5.4xlarge
+#      - c5.9xlarge
+#      - c5.18xlarge
     ConstraintDescription: Please choose a valid instance type.
   pAmiId:
     Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
@@ -420,8 +422,6 @@ Resources:
       Handler: 'index.handler_params'
       FunctionName: !Sub ${NamePrefix}-crypto-params-cr
       Timeout: 300
-      Environment:
-#      KmsKeyArn: !GetAtt rKmsAlias.Arn
       Policies:
         - Statement:
           -

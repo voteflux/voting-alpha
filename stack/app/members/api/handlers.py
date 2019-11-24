@@ -45,8 +45,10 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
     verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
 
-    # todo: make sure voters aren't enrolled yet
-    verify(VoterEnrolmentModel.get_maybe(msg.payload.email_addr))
+    voter_enrolled_m = VoterEnrolmentModel.get_maybe(msg.payload.email_addr)
+    verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
+    voter_enrolled = voter_enrolled_m.getValue()
+    verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
 
     sess = await new_session(msg.payload.email_addr, eth_address)
     jwt_token, session = sess
@@ -194,7 +196,6 @@ async def test_establish_session():
     print(r)
 
 
-
 def mk_msg(msg_to_sign, sig):
     return {'body': {'msg': msg_to_sign.body.decode(), 'sig': sig.hex()}}
 
@@ -203,6 +204,13 @@ def test_establish_session_via_handler():
     ctx = AttrDict(loop='loop')
     acct = w3.eth.account.privateKeyToAccount(_hash(b'hello')[:32])
     test_email_addr = 'max-test@xk.io'
+
+    VoterEnrolmentModel(
+        email_addr=test_email_addr,
+        first_name="max",
+        weightingMap={},
+        claimed=False
+    ).save()
 
     for expect_suceed, email_addr in [(False, 'mAX-test@xk.io'), (True, test_email_addr)]:
         msg = AttrDict(

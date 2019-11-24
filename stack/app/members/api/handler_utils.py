@@ -35,11 +35,13 @@ class Signature(AttrDict):
     signature: HexBytes
 
 
-def verify(condition, failure_msg=None):
+def verify(condition, failure_msg=None, user_msg: str = None):
     if not condition:
         error_key = b64encode(os.urandom(8))
-        log.error(f"Verification failed: {failure_msg}. Error key: {error_key}")
-        raise LambdaError(400, f'Verification of payload failed. Error key: {error_key}')
+        priv_er = f"User Verification failed: {failure_msg}. Error key: {error_key}"
+        log.warning(priv_er)
+        pub_er = f'Verification of payload failed. Error key: {error_key}'
+        raise LambdaError(400, pub_er, {"error": (user_msg + f"\nError Key: {error_key}") if user_msg else pub_er})
 
 
 def verifyDictKeys(d, keys):
@@ -101,6 +103,15 @@ def ensure_session(f):
 
         try:
             return await inner2()
+        except LambdaError as exception:
+            return {'statusCode': exception.code,
+                    'body': exception.client_response if exception.client_response else exception.msg,
+                    'headers': {
+                        'access-control-allow-headers': "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent",
+                        'access-control-allow-methods': "GET,POST,OPTIONS",
+                        'access-control-allow-origin': "*"
+                    }
+                    }
         except Exception as e:
             import traceback
             traceback.print_exc()
