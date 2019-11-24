@@ -326,6 +326,7 @@ def test_establish_session_via_handler():
 
     ctx = AttrDict(loop='loop')
     acct = Account.privateKeyToAccount(_hash(b'hello')[:32])
+    log.info(f"tests using account {acct.address} with privkey {acct.privateKey}")
     test_email_addr = 'test-ba-123@xk.io'
 
     VoterEnrolmentModel(
