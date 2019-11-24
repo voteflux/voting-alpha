@@ -84,6 +84,7 @@ def ensure_session(f):
             msg: Message = AttrDict(json.loads(msg_encoded))
             if 'request' not in msg or not (2 <= len(msg) <= 3) or len(msg.request) > 30 or type(
                     msg.request) is not str:
+                log.warning(f"Invalid message: {msg_encoded}")
                 raise LambdaError(403, "Invalid message.")
             if 'jwt' not in msg and msg.request != RequestTypes.ESTABLISH_SESSION.value:
                 raise LambdaError(403, "Invalid message.")

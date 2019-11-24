@@ -24,7 +24,7 @@ from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
 
 log = mk_logger('members-onboard')
-
+LAST_GENERATED_OTP = None
 
 @post_common
 @ensure_session
@@ -41,6 +41,8 @@ async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, sess
 
 
 async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    global LAST_GENERATED_OTP
+
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -63,7 +65,14 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
             succeeded=False,
         ))
     ])
-    resp = send_email(source=get_env('pAdminEmail', 'test@api.secure.vote'), to_addrs=[msg.payload.email_addr], subject="Test Email", body_txt=f"""
+
+    LAST_GENERATED_OTP = otp
+
+    resp = send_email(
+        source=get_env('pAdminEmail', 'test@api.secure.vote'),
+        to_addrs=[msg.payload.email_addr],
+        subject="Confirm your Identity for the Blockchain Australia AGM",
+        body_txt=f"""
 Your OTP is:
 
 {otp}
@@ -75,8 +84,7 @@ Your OTP is:
             SessionModel.otp.emails_sent_at.set(SessionModel.otp.emails_sent_at.prepend([TimestampMap()])),
             SessionModel.state.set(SessionState.s010_SENT_OTP_EMAIL)
         ])
-        log.error("** ** ** OTP UNSAFE RETURNED IN PAYLOAD ** ** **")
-        return {'result': 'success', 'jwt': jwt_token, 'otp_unsafe_todo_remove': otp}
+        return {'result': 'success', 'jwt': jwt_token}
 
 
 async def resend_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
@@ -103,6 +111,11 @@ async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, *
     verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
     verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
+
+    voter_enrolled_m = VoterEnrolmentModel.get_maybe(msg.payload.email_addr)
+    verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
+    voter_enrolled = voter_enrolled_m.getValue()
+    verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
 
     if session.otp.incorrect_attempts >= 10:
         raise LambdaError(429, 'too many incorrect otp attempts', {'error': "TOO_MANY_OTP_ATTEMPTS"})
@@ -143,6 +156,11 @@ async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *a
     verify(len(msg.payload.encrypted_backup) < 2000, 'expected size of backup')
     verify(can_base64_decode(msg.payload.encrypted_backup), 'backup is base64 encoded')
 
+    voter_enrolled_m = VoterEnrolmentModel.get_maybe(msg.payload.email_addr)
+    verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
+    voter_enrolled = voter_enrolled_m.getValue()
+    verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
+
     send_email(to_addrs=[msg.payload.email_addr], subject="Blockchain Australia AGM Elections Voting Identity Backup",
                body_txt=f"""
 Below you will find a backup of your voting identity for use in the Blockchain Australia 2019 AGM.
@@ -164,30 +182,46 @@ It is important you retain the password shown to you on your voting device.
 
 
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
-    verify(verifyDictKeys(msg.payload, ['email_addr', 'backup_hash']), 'payload keys')
+    verify(verifyDictKeys(msg.payload, ['email_addr']), 'payload keys')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
     verify(session.state == SessionState.s030_SENT_BACKUP_EMAIL, 'expected state')
 
-    if bs_to_base64(session.backup_hash) != msg.payload.backup_hash:
-        raise LambdaError(422, 'backup hash does not match', {"error": "BACKUP_HASH_MISMATCH"})
+    voter_enrolled_m = VoterEnrolmentModel.get_maybe(msg.payload.email_addr)
+    verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
+    voter_enrolled = voter_enrolled_m.getValue()
+    verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
 
-    # todo: we need to use some kind of sync key to avoid race conditions in the onboarding process
+    finished_web3 = False
+    try:
+        voter_enrolled.update([
+            VoterEnrolmentModel.claimed.set(True)
+        ], condition=VoterEnrolmentModel.claimed == False)
+        # todo: we need to use some kind of sync key to avoid race conditions in the onboarding process
 
-    # w3.eth.
-    # todo: publish data to smart contract
-    membership_txid = HexBytes("0x1234")
+        # w3.eth.
+        # todo: publish data to smart contract
+        membership_txid = HexBytes("0x1234")
 
-    # todo: get proof of tx in blockchain via merkle branch to block header
+        # todo: get proof of tx in blockchain via merkle branch to block header
 
-    session.update([
-        SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
-        SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
-    ])
+        session.update([
+            SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
+            SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
+        ])
+        # todo: we need to mark the operation finalized ASAP after issuing the tx
 
-    # todo: we need to mark the operation finalized ASAP after issuing the tx
+        voter_enrolled.update([
+            VoterEnrolmentModel.claimed.set(True)
+        ])
 
-    log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
-    return {'result': 'success'}
+        log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
+        return {'result': 'success'}
+    except Exception as e:
+        # this would be bad, need to have the above as atomic as possible.
+        log.error(e)
+        if "An error occurred (ConditionalCheckFailedException)" in str(e):
+            pass
+        raise LambdaError(400, {'result': 'failure', 'exception': [str(e), repr(e)]})
 
 
 async def test_establish_session():
@@ -201,6 +235,8 @@ def mk_msg(msg_to_sign, sig):
 
 
 def test_establish_session_via_handler():
+    global LAST_GENERATED_OTP
+
     ctx = AttrDict(loop='loop')
     acct = w3.eth.account.privateKeyToAccount(_hash(b'hello')[:32])
     test_email_addr = 'max-test@xk.io'
@@ -233,7 +269,7 @@ def test_establish_session_via_handler():
 
     body = AttrDict(json.loads(r['body']))
     jwt_token = body.jwt
-    otp = body.otp_unsafe_todo_remove
+    otp = LAST_GENERATED_OTP
 
     msg_2, _, sig_2 = encode_and_sign_msg(AttrDict(
         payload={'email_addr': test_email_addr, 'otp': otp}, jwt=jwt_token,
@@ -254,7 +290,7 @@ def test_establish_session_via_handler():
 
     backup_hash = bs_to_base64(_hash(encrypted_backup.encode()))
     msg_4, _, sig_4 = encode_and_sign_msg(AttrDict(
-        payload={'email_addr': test_email_addr, 'backup_hash': backup_hash},
+        payload={'email_addr': test_email_addr},  # 'backup_hash': backup_hash
         jwt=jwt_token, request=RequestTypes.FINAL_CONFIRM.value
     ), acct)
 
