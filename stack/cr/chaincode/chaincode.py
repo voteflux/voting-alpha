@@ -360,7 +360,6 @@ def transform_outputs(ret_types, outputs):
     return _outputs
 
 
-
 def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=dict(), sc_op=dict(), dry_run=False) -> (Dict, List):
     '''Constructs an ABI on the fly based on Value,Type of inputs, resolves variables (e.g. SC addrs) which need to be,
      and returns encoded+packed arguments as a hex string with no 0x prefix. Also resolves/adds libraries if need be.'''

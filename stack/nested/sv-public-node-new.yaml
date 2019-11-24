@@ -92,3 +92,5 @@ Outputs:
     Value: !GetAtt rNodeStack.Outputs.oPublicIp
   oDomainName:
     Value: !GetAtt rNodeStack.Outputs.oDomainName
+  oInstanceId:
+    Value: !GetAtt rNodeStack.Outputs.oInstanceId

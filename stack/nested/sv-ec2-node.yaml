@@ -132,3 +132,5 @@ Outputs:
     Value: !GetAtt rEc2Instance.PublicIp
   oDomainName:
     Value: !Ref rDomainName
+  oInstanceId:
+    Value: !Ref rEc2Instance

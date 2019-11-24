@@ -36,8 +36,6 @@ Resources:
     Properties:
       ServiceToken: !GetAtt rChaincodeLambda.Arn
       pNamePrefix: !Ref pNamePrefix
-#      pDomain: !Ref pDomain
-#      pSubdomain: !Ref pSubdomain
       pPublicNodeDomain: !Ref pPublicNodeDomain
       pSmartContracts:
         - Name: membership
@@ -109,6 +107,9 @@ Resources:
         - Name: token-abbr-lookup
           Type: deploy
           Output: TokenAbbrLookupAddr
+        - Name: erc20-balance-proxy
+          Type: deploy
+          Output: Erc20BalanceProxyAddr
 
 
   rChaincodeLambda:
@@ -157,4 +158,5 @@ Outputs:
     Value: !GetAtt rChaincodeCr.BBFarmAux2Addr
   oTokenAbbrLookupAddr:
     Value: !GetAtt rChaincodeCr.TokenAbbrLookupAddr
-
+  oErc20BalanceProxyAddr:
+    Value: !GetAtt rChaincodeCr.Erc20BalanceProxyAddr

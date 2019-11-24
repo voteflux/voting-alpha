@@ -3,6 +3,7 @@
 ## LICENSE: MIT
 
 import hashlib
+import importlib
 import platform
 import re
 import shutil
@@ -31,6 +32,7 @@ init()
 
 from blessed import Terminal
 from dotenv import load_dotenv, dotenv_values
+import dotenv
 import cfn_tools
 
 from time import sleep
@@ -852,6 +854,7 @@ def default_params_from_env(env_name, evs):
         'Subdomain': evs.SUBDOMAIN,
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
+        'pCreateAlb': 'true' if env_name == 'dev' else 'false'
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
@@ -864,9 +867,10 @@ def gen_packaged_stack_tmp_filename(env_name):
     return f'tmp-stack.{env_name}.yaml'
 
 
-def get_evs(env_name):
+def get_evs(env_name, do_load=True):
     env_file = f'.env.{env_name}'
-    load_dotenv(env_file, override=True)
+    if do_load:
+        load_dotenv(env_file, override=True)
     evs = AttrDict(dotenv_values(env_file))
     return evs
 
@@ -962,7 +966,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
             print_output(f"Outputs: {json.dumps(dict(outputs.items()), indent=2)}")
             print_output(f"""Env Vars for UI:
 
-VUE_APP_WEB3_PROVIDER={outputs.oPublicNode0Url}
+VUE_APP_WEB3_PROVIDER={outputs.oWeb3Provider}
 VUE_APP_DEMOC_HASH={outputs.oDemocHash}
 VUE_APP_INDEX_CONTRACT_ADDR={outputs.oIndexAddr}
 VUE_APP_AUX_CONTRACT_ADDR={outputs.oBBFarmAux2Addr}
@@ -1036,6 +1040,108 @@ def upload_func(env_name, resource_name, nested):
 
     print_output(f"Updated function {lambda_func_name}. Resp: {resp}")
 
+
+script_info = {
+    'loadMembers': {
+        'module': 'stack.app.members.api.scripts.loadMembers',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_load_members',
+    },
+    'setupMemberClasses': {
+        'module': 'stack.app.members.api.scripts.setupMemberClasses',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'append_or_set_env': {
+            'PYTHONPATH': Path('stack/cr/chaincode').absolute().__str__()
+        },
+        'function': '_setup_member_classes',
+        'args': [('oWeb3Provider', 'cfn'), ('oErc20BalanceProxyAddr', 'cfn')]
+    }
+
+}
+
+
+def script_needs_env(script, var_name):
+    _vars = script_info[script]['env_vars']
+    return var_name in _vars or any([ev is tuple and var_name == ev[0] for ev in _vars])
+
+
+@click.group('script-env')
+@click.argument('env', default="dev")
+def scripts(env):
+    pass
+
+
+cli.add_command(scripts)
+
+
+# # todo: forwarding unknown options: http://click.palletsprojects.com/en/5.x/advanced/
+# @scripts.command(name='run')
+# @click.argument('script-name', type=click.Choice(list(script_info.keys())))
+# @click.pass_context
+# def run_script(ctx: click.Context, script_name):
+#     env_name = get_env_name(ctx.parent.params['env'])
+#     evs = get_evs(env_name, do_load=False)
+#     our_script = script_info[script_name]
+#     env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
+#     for (k, v) in env_vars_to_load.items():
+#         os.environ[k] = v
+#     if our_script.get('remap_env', None):
+#         for (oldName, newName) in our_script['remap_env']:
+#             os.environ[newName] = os.environ[oldName]
+#
+#     script_module = importlib.import_module(our_script['module'])
+#     print(dir(script_module))
+#     getattr(script_module, our_script['function'])("~/sv-test-members.csv")
+
+
+@click.group('run', invoke_without_command=True)
+@click.argument('script-name', type=click.Choice(list(script_info.keys())))
+@click.argument('args', nargs=-1)
+@click.option('--gen-args', default=False, is_flag=True)
+@click.pass_context
+def run_script(ctx, script_name, args, gen_args):
+    if gen_args and len(args) > 0:
+        raise Exception("can't specify both --gen-args and provide args")
+
+    env_name = get_env_name(ctx.parent.params['env'])
+    evs = get_evs(env_name, do_load=False)
+    our_script = script_info[script_name]
+
+    if gen_args and 'args' not in our_script:
+        raise Exception('cannot gen args for this')
+
+    env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
+
+    if 'append_or_set_env' in our_script:
+        for (k, v) in our_script['append_or_set_env'].items():
+            env_vars_to_load[k] = ':'.join(filter(lambda v: v is not None, [v, os.environ.get('PYTHON_PATH', None)]))
+
+    logging.info(env_vars_to_load)
+
+    for (k, v) in env_vars_to_load.items():
+        os.environ[k] = v
+
+    if our_script.get('remap_env', None):
+        for (oldName, newName) in our_script['remap_env']:
+            os.environ[newName] = os.environ[oldName]
+
+    script_module = importlib.import_module(our_script['module'])
+
+    if gen_args:
+        stack_ds = cfn_outputs_to_dict(get_stack_details(evs.STACK_NAME)['Outputs'])
+        args = []
+        for (name, source) in our_script['args']:
+            if source == 'cfn':
+                args.append(stack_ds[name])
+            else:
+                raise Exception('no other sources of args supported')
+
+    getattr(script_module, our_script['function'])(*args)
+
+
+scripts.add_command(run_script)
 
 # monkey patch so usage output looks nicer
 sys.argv[0] = './manage'

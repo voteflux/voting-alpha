@@ -77,6 +77,7 @@ Parameters:
   NamePrefix:
     Description: A DNS compatible name prefix to use in the names of resources (e.g. fluxvote-testnet)
     Type: String
+    MaxLength: '20'
   AdminEmail:
     Description: The email address for the administrator. Alerts and configuration items will be sent here, including SSH keys.
     Type: String
@@ -190,6 +191,9 @@ Parameters:
   pCreateMembersApp:
     Type: String
     Default: 'true'
+  pCreateAlb:
+    Type: String
+    Default: 'false'
 
 
 Conditions:
@@ -214,6 +218,8 @@ Conditions:
     !And [{ Condition: cCreateNodes }, !Equals [ !Ref pCreateChaincodeStack, 'true' ] ]
   cCreateMembersApp:
     !And [{ Condition: cCreateChaincodeStack }, !Equals [ !Ref pCreateMembersApp, 'true' ] ]
+  cCreateAlb:
+    !And [{ Condition: cCreateMembersApp }, !Equals [ !Ref pCreateAlb, 'true' ] ]
 
 
 
@@ -651,13 +657,27 @@ Resources:
         pAdminEmail: !Ref AdminEmail
 
 
-#  rPublicLoadBalancer:
-#    Type: AWS::CloudFormation::Stack
-#    Properties:
-#      TemplateURL: ./nested/sv-public-alb.yaml
-#      Parameters:
-#        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
-#        pNamePrefix: !Ref NamePrefix
+  rPublicLoadBalancer:
+    Type: AWS::CloudFormation::Stack
+    Condition: cCreateAlb
+    Properties:
+      TemplateURL: ./nested/sv-public-alb.yaml
+      Parameters:
+        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
+        pNamePrefix: !Ref NamePrefix
+        pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
+        pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
+
+  rAlbDomain:
+    Type: AWS::Route53::RecordSet
+    Condition: cCreateAlb
+    Properties:
+      HostedZoneName: !Sub ${HostedZoneDomain}.
+      AliasTarget:
+        DNSName: !GetAtt rPublicLoadBalancer.Outputs.oAlbDnsName
+        HostedZoneId: !GetAtt rPublicLoadBalancer.Outputs.oAlbCanonHzId
+      Name: !Sub nodes.${Subdomain}.${HostedZoneDomain}.
+      Type: A
 
 Outputs:
   oChainSpecUrl:
@@ -673,9 +693,13 @@ Outputs:
   oPublicNode0Ip:
     Condition: cCreateNodes
     Value: !GetAtt rPublicNode0.Outputs.oPublicIp
-  oPublicNode0Url:
+  oWeb3Provider:
     Condition: cCreateNodes
-    Value: !Sub 'http://${rPublicNode0.Outputs.oDomainName}:8545'
+    Value: !If [
+            cCreateAlb,
+            !Sub 'https://nodes.${Subdomain}.${HostedZoneDomain}:8545',
+            !Sub 'http://${rPublicNode0.Outputs.oDomainName}:8545'
+            ]
 #   EthStatsURL:
 #     Description: "Visit this URL to see the status of your Ethereum nodes"
 #     Value:
@@ -703,6 +727,8 @@ Outputs:
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAux2Addr
   oTokenAbbrLookupAddr:
     Value: !GetAtt rChaincodeStack.Outputs.oTokenAbbrLookupAddr
+  oErc20BalanceProxyAddr:
+    Value: !GetAtt rChaincodeStack.Outputs.oErc20BalanceProxyAddr
 
   oApiUrl:
     Value: !Sub "https://${rApiBootstrapStack.Outputs.oApiDomain}/"

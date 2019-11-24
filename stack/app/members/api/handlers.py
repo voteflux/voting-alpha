@@ -4,6 +4,7 @@ import datetime
 import json
 import os
 import sys
+import time
 
 import jwt
 from eth_account.messages import encode_defunct, SignableMessage
@@ -27,6 +28,14 @@ from .env import get_env
 log = mk_logger('members-onboard')
 LAST_GENERATED_OTP = None
 
+
+# 8am Monday 25th
+starting_timestamp = 1574629200 if not get_env('__DEV__', False) else 0
+
+# 11am minus 10 minutes (this leaves 5 min slack)
+ending_timestamp = 1574640000 - 600 if not get_env('__DEV__', False) else 2574597120
+
+
 @post_common
 @ensure_session
 async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, session):
@@ -42,6 +51,10 @@ async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, sess
 
 async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     global LAST_GENERATED_OTP
+
+    # check times first
+    verify(time.time() >= starting_timestamp, 'early rego attempt', 'Cannot register voters before 8am Monday 25th.')
+    verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
 
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
@@ -190,6 +203,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
     voter_enrolled = voter_enrolled_m.getValue()
     verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
+    verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
 
     finished_web3 = False
     try:

@@ -7,7 +7,8 @@
     "test": "test"
   },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "for f in contracts/*; do solc --bin --abi --allow-paths '$PWD,' --overwrite --output-dir build/contracts $f; done"
   },
   "repository": {
     "type": "git",
