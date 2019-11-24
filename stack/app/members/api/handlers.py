@@ -6,7 +6,10 @@ import os
 import sys
 import time
 
+import boto3
+
 import jwt
+from eth_account import Account
 from eth_account.messages import encode_defunct, SignableMessage
 import eth_utils
 from api.exceptions import LambdaError
@@ -29,11 +32,14 @@ log = mk_logger('members-onboard')
 LAST_GENERATED_OTP = None
 
 
+ssm = boto3.client('ssm')
+
+
 # 8am Monday 25th
-starting_timestamp = 1574629200 if not get_env('__DEV__', False) else 0
+starting_timestamp = 1574629200 if get_env('VOTING_ALPHA_TEST_ENV', False) != "True" else 0
 
 # 11am minus 10 minutes (this leaves 5 min slack)
-ending_timestamp = 1574640000 - 600 if not get_env('__DEV__', False) else 2574597120
+ending_timestamp = 1574640000 - 600 if get_env('VOTING_ALPHA_TEST_ENV', False) != "True" else 2574597120
 
 
 @post_common
@@ -194,6 +200,17 @@ It is important you retain the password shown to you on your voting device.
     return {'result': 'success'}
 
 
+def get_ssm_param(name, decode_json=False, with_decryption=False):
+    try:
+        value = ssm.get_parameter(Name=name, WithDecryption=with_decryption)['Parameter']['Value']
+    except Exception as e:
+        log.warning(f"Error during get_parameter(Name='{name}'): {repr(e)}")
+        return None
+    if decode_json:
+        value = json.loads(value)
+    return value
+
+
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr']), 'payload keys')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -206,6 +223,15 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
 
     finished_web3 = False
+
+    # setup
+    try:
+        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
+        account = Account.privateKeyToAccount(priv_key)
+    except Exception as e:
+        pass
+
+    # main
     try:
         voter_enrolled.update([
             VoterEnrolmentModel.claimed.set(True)

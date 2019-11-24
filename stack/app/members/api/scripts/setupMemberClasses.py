@@ -6,6 +6,7 @@ from pathlib import Path
 import click
 
 from env import get_env
+from hexbytes import HexBytes
 from web3 import Web3
 import eth_utils
 import boto3
@@ -14,6 +15,7 @@ from eth_account import Account
 ssm = boto3.client('ssm')
 
 NAME_PREFIX = get_env('NAME_PREFIX', None)
+NONCE = None
 
 groups = ['EX', 'SCALE', 'CORP', 'FELLOW', 'IND', 'STUD']
 multi = ['EX', 'SCALE', 'CORP']
@@ -62,6 +64,8 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
     account = Account.privateKeyToAccount(priv_key)
     print('Loaded account w/ address:', account.address)
 
+    baseTx = lambda: {'from': account.address, 'value': 0, 'gas': 8000000, 'gasPrice': 1}
+
     w3 = Web3(Web3.HTTPProvider(httpProvider))
     print('Balance:', w3.eth.getBalance(account.address))
 
@@ -74,40 +78,60 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
     membership_bc = mk_membership_sc().constructor().bytecode
 
     def next_nonce():
-        return w3.eth.getTransactionCount(account.address)
+        global NONCE
+        if NONCE is None:
+            NONCE = w3.eth.getTransactionCount(account.address)
+        else:
+            NONCE += 1
+        return NONCE
 
     def publish_bc(bc):
-        tx = blank_tx(2000000, next_nonce(), membership_bc)
+        tx = blank_tx(8000000, next_nonce(), bc)
         signed_tx = account.signTransaction(tx)
         txid = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+        return txid
+
+    def wait_txid(txid):
         w3.eth.waitForTransactionReceipt(txid)
-        return w3.eth.getTransactionReceipt(txid)
+        receipt = w3.eth.getTransactionReceipt(txid)
+        if receipt['status'] == 0:
+            raise Exception(f'Tx failed! Status 0. Txid: {txid.hex()}')
+        return receipt
 
     def mk_bal_px(**kwargs):
         return w3.eth.contract(abi=json.loads(load_sc('Erc20BalanceProxy.abi')),
                                bytecode=load_sc('Erc20BalanceProxy.bin'), **kwargs)
 
+    bal_px = mk_bal_px()
+    bal_px_bc = bal_px.constructor().bytecode
+
     def step1():
-        bal_px = mk_bal_px()
-        bal_px_bc = bal_px.constructor().bytecode
+        contracts_txids = {multi_: publish_bc(bal_px_bc)}
 
-        contracts_addrs = {multi_: publish_bc(bal_px_bc).contractAddress}
         for group in groups:
-            contracts_addrs[group] = publish_bc(membership_bc).contractAddress
+            contracts_txids[group] = publish_bc(membership_bc)
 
-        print(json.dumps(contracts_addrs, indent=2))
+        print("TXIDs", contracts_txids)
+
+        contracts_addrs = {}
+        for g, txid in contracts_txids.items():
+            wait_txid(txid)
+            contracts_addrs[g] = w3.eth.getTransactionReceipt(txid).contractAddress
+            print("created:", g, contracts_addrs[g])
+
         return contracts_addrs
 
-    _contracts_addrs = step1()
-    # _contracts_addrs_old = {
-    #     "EX,SCALE,CORP": "0x7ad9737917A35c20eEe733ee1b4e906495954691",
-    #     "EX": "0x645ffbbe9fF5B35051FCA578D9E0cafbcD7757AE",
-    #     "SCALE": "0x06341257999e17E9259F610816D14d38eb1b17Ac",
-    #     "CORP": "0x1a28509a0097e1060c8BE3CbDEF8cb6aE72e0869",
-    #     "FELLOW": "0x69E96b9d5914BB1fe941b1d06e353f98052e51Cd",
-    #     "IND": "0x6C523F0b17DE2095a87Bbf7FB4dE866173c00C04",
-    #     "STUD": "0x5DBf72205F10fb2A02eCfA883de22b1F4531f9c3"
-    # }
+    # _contracts_addrs = step1()
+    _contracts_addrs = {
+        "EX,SCALE,CORP": "0xA314d5aE9c6f4F9a8e1969449E33A762bBDfc26B",
+        "EX": "0xFBa7d684E31D3537433d7D385Ec8A218caf149B8",
+        "SCALE": "0x74330077C3ca1a3BB7A9ab043F9e40cB6b64E4Ff",
+        "CORP": "0xE09083ae054E7e8167080F54879da8aa562f71eA",
+        "FELLOW": "0x0DBEf5F598e39e72c15870Ae872d6b03180e3a46",
+        "IND": "0x47C6Ce20948512b229ECA90A31dF43B347CF802B",
+        "STUD": "0x7C7261c54BFeE8368ab0Fddd492bf1FC3c285540"
+    }
+    print(json.dumps(_contracts_addrs, indent=4))
 
     def to_bytes32(_str):
         return b'\x00' * (32 - len(_str)) + _str.encode()
@@ -117,14 +141,82 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
 
         for c_name, c in contracts.items():
             if ',' in c_name:
-                groups = c_name.split(',')
-                for g in groups:
+                _groups = c_name.split(',')
+                for g in _groups:
                     f = c.functions
-                    print(contracts_addrs[g], to_bytes32(g))
-                    print(f.addToken(contracts_addrs[g], g).buildTransaction({'from': account.address, 'value': 0}))
-                    print(dir(f.addToken(contracts_addrs[g], to_bytes32(g))))
-                    # contracts[c_name]
-        # print(dir(contracts[multi_].functions))
-        # print(dir(contracts['IND'].functions))
+                    print(w3.is_encodable('address', contracts_addrs[g]))
+                    print(w3.is_encodable('bytes32', to_bytes32(g)))
+                    print(contracts_addrs[g], g)
+                    tx = f.addToken(_token=contracts_addrs[g], _name=g).buildTransaction(dict(baseTx()))
+                    tx.update({'nonce': next_nonce()})
+                    txid = w3.eth.sendRawTransaction(account.signTransaction(tx).rawTransaction)
+                    receipt = w3.eth.waitForTransactionReceipt(txid)
+                    print(receipt['status'])
+                    print(f'Added {g} in {w3.toHex(txid)}')
 
-    step2(_contracts_addrs)
+    # step2(_contracts_addrs)
+
+    def test_balances():
+        my_addr = account.address
+        multi_c = mk_bal_px(address=_contracts_addrs[multi_])
+
+        def assert_bal(expected):
+            curr_bal = multi_c.functions.balanceOf(account.address).call()
+            if curr_bal != expected:
+                raise Exception(f'balances mismatch: current: {curr_bal}, expected: {expected}')
+
+        def get_c(g):
+            return mk_membership_sc(address=_contracts_addrs[g])
+
+        def do_tx_f(tx_f):
+            tx = tx_f.buildTransaction(dict(baseTx()))
+            tx.update({'nonce': next_nonce()})
+            txid = w3.eth.sendRawTransaction(account.signTransaction(tx).rawTransaction)
+            wait_txid(txid)
+            return txid
+
+        def set_bal(g, bal):
+            c_f = get_c(g).functions
+            print('admin_check', c_f.isAdmin(my_addr).call())
+            return do_tx_f(c_f.setMember(my_addr, bal, 1, 1674629200))
+
+        assert_bal(0)
+        do_tx_f(get_c('EX').functions.setMember(my_addr, 3, 1474629200, 1674629200))
+        assert_bal(3)
+        do_tx_f(get_c('CORP').functions.setMember(my_addr, 5, 0, 2000000000))
+        assert_bal(8)
+        do_tx_f(get_c('IND').functions.setMember(my_addr, 5, 0, 2000000000))
+        assert_bal(8)
+
+    test_balances()
+    #
+    # c = mk_bal_px(address=_contracts_addrs[multi_])
+    # c2 = mk_membership_sc(address=_contracts_addrs[multi_])
+    #
+    # print(c.functions.isAdmin(account.address).call())
+    # print(c2.functions.isAdmin(account.address).call())
+    #
+    # try:
+    #     print(c2.functions.balanceOf(account.address).call())
+    # except:
+    #     print('fail')
+    #     pass
+    #
+    # try:
+    #     print(c.functions.balanceOf(account.address).call())
+    # except:
+    #     print('fail')
+    #     pass
+    #
+    # print(c.functions.addToken(account.address, "mine"))
+    # addT = c.functions.addToken(account.address, "mine")
+    # print(dir(addT))
+    # # print(addT.estimateGas())
+    # print(addT.buildTransaction({'value': 0, 'gas': 1000000, 'gasPrice': 1}))
+    # print()
+    # print(addT)
+    # print(list([c.functions.tokens(r).call() for r in range(10)]))
+    #
+    # # at end we do this so it's easy to find.
+    #
+    # print(json.dumps(_contracts_addrs, indent=4))
