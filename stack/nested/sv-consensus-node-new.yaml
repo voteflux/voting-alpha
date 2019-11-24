@@ -77,7 +77,7 @@ Resources:
               --jsonrpc-interface=local \
               --reseal-on-txs=all \
               --engine-signer=${pSignerAddress} --password=/static/password.txt \
-              --reseal-min-period=50 --reseal-max-period=900000 \
+              --reseal-min-period=100 \
               --min-gas-price=1
           res2=$?
           WAIT_TIME=0

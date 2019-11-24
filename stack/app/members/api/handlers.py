@@ -249,7 +249,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
 
     # setup
     try:
-        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
+        name_prefix = get_env('pNamePrefix')
+        priv_key = get_ssm_param(f"sv-{name_prefix}-nodekey-service-publish", with_decryption=True)
         account = Account.privateKeyToAccount(priv_key)
         my_addr = account.address
         w3 = Web3(HTTPProvider(get_env('pEthHost')))
@@ -279,12 +280,14 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
             # txs = list([dict(nonce=next_nonce + i, **prev_tx) for (i, prev_tx) in enumerate(unsigned_transactions)])
             raw_tx = account.signTransaction(dict(nonce=next_nonce, **unsigned_tx)).rawTransaction
             # raw_txs = list([account.signTransaction(tx).rawTransaction for tx in txs])
-            txids.append(w3.eth.sendRawTransaction(raw_tx))
+            txid = w3.eth.sendRawTransaction(raw_tx)
+            txids.append(txid)
             # txids = list([w3.eth.sendRawTransaction(tx) for tx in raw_txs])
-            w3.eth.waitForTransactionReceipt(txids[-1])
+            w3.eth.waitForTransactionReceipt(txid, poll_latency=0.05)
+            log.info(f'confirmed: {txid}')
             # await_all = list([w3.eth.waitForTransactionReceipt(txid) for txid in txids])
-            txr = w3.eth.getTransactionReceipt(txids[-1])
-            out_txs[txids[-1]] = txr
+            txr = w3.eth.getTransactionReceipt(txid)
+            out_txs[txid] = txr
             # txrs = list([w3.eth.getTransactionReceipt(txid) for txid in txids])
             # if any([txr['status'] == 0 for txr in txrs]):
             if txr['status'] == 0:
@@ -301,7 +304,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
         log.info(f"main start: {start}")
         log.info(f"main end: {datetime.datetime.now().isoformat()}")
-        return {'result': 'success'}
+        return {'result': 'success', txids: list([eth_utils.to_hex(txids)])}
     except Exception as e:
         # this would be bad, need to have the above as atomic as possible.
         log.error(e)

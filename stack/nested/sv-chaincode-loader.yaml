@@ -79,10 +79,13 @@ Resources:
           Function: $sv-backend.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
           Type: calltx
+        - Name: erc20-balance-proxy
+          Type: deploy
+          Output: Erc20BalanceProxyAddr
         - Name: ix-mk-democ
           Function: $sv-index.dInit
           Value: 1
-          Inputs: [ $membership, 'bool:true' ]
+          Inputs: [ $erc20-balance-proxy, 'bool:true' ]
           Type: calltx
           Output: MkDemocTxid
         - Name: ix-payments-perms
@@ -107,10 +110,6 @@ Resources:
         - Name: token-abbr-lookup
           Type: deploy
           Output: TokenAbbrLookupAddr
-        - Name: erc20-balance-proxy
-          Type: deploy
-          Output: Erc20BalanceProxyAddr
-
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
