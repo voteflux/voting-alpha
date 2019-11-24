@@ -963,7 +963,6 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
         else:
             print_output("Deploy Success! {}".format(cfn_evt_url))
             deets = get_stack_details(stack_name)
-
             outputs = AttrDefault(lambda: '<< UNKNOWN OUTPUT >>', cfn_outputs_to_dict(deets['Outputs']))
             print_output(f"Outputs: {json.dumps(dict(outputs.items()), indent=2)}")
             print_output(f"""Env Vars for UI:
@@ -1059,7 +1058,14 @@ script_info = {
         },
         'function': '_setup_member_classes',
         'args': [('oWeb3Provider', 'cfn'), ('oErc20BalanceProxyAddr', 'cfn')]
-    }
+    },
+    'sendCoins': {
+        'module': 'stack.app.members.api.scripts.sendCoins',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_send_coins',
+        'args': [('oWeb3Provider', 'cfn')]
+    },
 
 }
 
@@ -1104,8 +1110,8 @@ cli.add_command(scripts)
 @click.option('--gen-args', default=False, is_flag=True)
 @click.pass_context
 def run_script(ctx, script_name, args, gen_args):
-    if gen_args and len(args) > 0:
-        raise Exception("can't specify both --gen-args and provide args")
+    # if gen_args and len(args) > 0:
+    #     raise Exception("can't specify both --gen-args and provide args")
 
     env_name = get_env_name(ctx.parent.params['env'])
     evs = get_evs(env_name, do_load=False)
@@ -1133,17 +1139,38 @@ def run_script(ctx, script_name, args, gen_args):
 
     if gen_args:
         stack_ds = cfn_outputs_to_dict(get_stack_details(evs.STACK_NAME)['Outputs'])
-        args = []
+        _args = []
         for (name, source) in our_script['args']:
             if source == 'cfn':
-                args.append(stack_ds[name])
+                _args.append(stack_ds[name])
             else:
                 raise Exception('no other sources of args supported')
 
-    getattr(script_module, our_script['function'])(*args)
+    getattr(script_module, our_script['function'])(*_args, *args)
 
 
 scripts.add_command(run_script)
+
+
+@cli.command(name='outputs-env')
+@click.argument('env-name', type=click.STRING, default='dev')
+def outputs_env(env_name):
+    env_name = get_env_name(env_name)
+    evs = get_evs(env_name)
+    deets = get_stack_details(evs.STACK_NAME)
+    outputs = AttrDefault(lambda: '<< UNKNOWN OUTPUT >>', cfn_outputs_to_dict(deets['Outputs']))
+    print_output(f"Outputs: {json.dumps(dict(outputs.items()), indent=2)}")
+    print_output(f"""Env Vars for UI:
+
+VUE_APP_WEB3_PROVIDER={outputs.oWeb3Provider}
+VUE_APP_DEMOC_HASH={outputs.oDemocHash}
+VUE_APP_INDEX_CONTRACT_ADDR={outputs.oIndexAddr}
+VUE_APP_AUX_CONTRACT_ADDR={outputs.oBBFarmAux2Addr}
+VUE_APP_API_ENDPOINT={outputs.oApiUrl}
+VUE_APP_TOKEN_LOOKUP={outputs.oTokenAbbrLookupAddr}
+
+""")
+
 
 
 voter_group_to_scs = {
