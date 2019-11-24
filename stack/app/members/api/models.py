@@ -166,6 +166,22 @@ class SessionModel(BaseModel):
     tx_proof = BinaryAttribute(null=True)
 
 
+# Voter Enrolment models
+
+
+class VoterEnrolmentModel(BaseModel):
+    class Meta:
+        table_name = gen_table_name("voter-enrolment-db")
+        region = get_env("AWS_REGION")
+    email_addr = UnicodeAttribute(hash_key=True)
+    first_name = UnicodeAttribute()
+    weighting = NumberAttribute()
+    claimed = BooleanAttribute()
+
+
+# FLUX STUFF BELOW, LEFT OVER FROM COPY-PASTE
+
+
 class QuestionModel(UidPrivate):
     class Meta:
         table_name = gen_table_name("qanda-questions-ddb")

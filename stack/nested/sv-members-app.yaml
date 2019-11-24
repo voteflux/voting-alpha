@@ -69,6 +69,17 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+  rVoterEnrolmentDB:
+    Type: AWS::Serverless::SimpleTable
+    DeletionPolicy: Delete
+    Properties:
+      TableName: !Sub ${pNamePrefix}-voter-enrolment-db
+      PrimaryKey:
+        Name: email_addr
+        Type: String
+      SSESpecification:
+        SSEEnabled: true
+
   # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
   # and logs any arbitrary data needed for later audit
   rFMemberRegister:

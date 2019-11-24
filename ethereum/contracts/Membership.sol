@@ -17,6 +17,10 @@ contract Membership {
     mapping (address => Member) public members;
     address[] public memberList;
 
+//    string public name;
+//    string public symbol;
+//    uin8 public decimals = 0;
+
     event SetMember(address votingAddr, uint48 weight, uint48 startTime, uint48 endTime);
     event AddAdmin(address admin);
     event RevokeAdmin(address oldAdmin);
@@ -30,7 +34,11 @@ contract Membership {
 
     // constructor
 
+//    constructor(string _name, string _symbol, uint8 _decimals) public {
     constructor() public {
+//        name = _name;
+//        symbol = _symbol;
+//        decimals = _decimals;
         admins.add(msg.sender);
         emit AddAdmin(msg.sender);
     }

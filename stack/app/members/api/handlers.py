@@ -17,7 +17,7 @@ from .common.lib import _hash
 from web3.auto import w3
 from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
-from .models import SessionModel, OtpState, SessionState, TimestampMap
+from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
 from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, encode_sv_signed_msg, \
     verifyDictKeys, encode_and_sign_msg
 from .lib import mk_logger, now, bs_to_base64
@@ -43,6 +43,10 @@ async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, sess
 async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, 'verify ethereum addresses match')
+    verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
+
+    # todo: make sure voters aren't enrolled yet
+    verify(VoterEnrolmentModel.get_maybe(msg.payload.email_addr))
 
     sess = await new_session(msg.payload.email_addr, eth_address)
     jwt_token, session = sess
@@ -96,6 +100,7 @@ Example payload:
 async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
     verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
+    verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
 
     if session.otp.incorrect_attempts >= 10:
         raise LambdaError(429, 'too many incorrect otp attempts', {'error': "TOO_MANY_OTP_ATTEMPTS"})
@@ -132,6 +137,7 @@ Example payload:
 async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
     verify(session.state == SessionState.s020_CONFIRMED_OTP, 'expected state')
+    verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
     verify(len(msg.payload.encrypted_backup) < 2000, 'expected size of backup')
     verify(can_base64_decode(msg.payload.encrypted_backup), 'backup is base64 encoded')
 
@@ -157,6 +163,7 @@ It is important you retain the password shown to you on your voting device.
 
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'backup_hash']), 'payload keys')
+    verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
     verify(session.state == SessionState.s030_SENT_BACKUP_EMAIL, 'expected state')
 
     if bs_to_base64(session.backup_hash) != msg.payload.backup_hash:
@@ -196,21 +203,24 @@ def test_establish_session_via_handler():
     acct = w3.eth.account.privateKeyToAccount(_hash(b'hello')[:32])
     test_email_addr = 'max-test@xk.io'
 
-    msg = AttrDict(
-        payload={'email_addr': test_email_addr, 'address': acct.address},
-        request=RequestTypes.ESTABLISH_SESSION.value
-    )
-    msg_to_sign, full_msg, signed = encode_and_sign_msg(msg, acct)
+    for expect_suceed, email_addr in [(False, 'mAX-test@xk.io'), (True, test_email_addr)]:
+        msg = AttrDict(
+            payload={'email_addr': email_addr, 'address': acct.address},
+            request=RequestTypes.ESTABLISH_SESSION.value
+        )
+        msg_to_sign, full_msg, signed = encode_and_sign_msg(msg, acct)
 
-    print(signed)
-    print(msg_to_sign)
-    print('recover msg', w3.eth.account.recover_message(msg_to_sign, signature=signed.signature))
-    print('recover hash1', w3.eth.account.recoverHash(signed.messageHash, signature=signed.signature))
-    print('recover hash2', w3.eth.account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
+        print(signed)
+        print(msg_to_sign)
+        print('recover msg', w3.eth.account.recover_message(msg_to_sign, signature=signed.signature))
+        print('recover hash1', w3.eth.account.recoverHash(signed.messageHash, signature=signed.signature))
+        print('recover hash2', w3.eth.account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
 
-    sig: HexBytes = signed.signature
-    r = message_handler(mk_msg(msg_to_sign, sig), ctx)
-    print(r)
+        sig: HexBytes = signed.signature
+        r = message_handler(mk_msg(msg_to_sign, sig), ctx)
+        print(r)
+        if (r['statusCode'] == 200) != expect_suceed:
+            raise Exception("we should have failed here.")
 
     body = AttrDict(json.loads(r['body']))
     jwt_token = body.jwt
@@ -245,6 +255,8 @@ def test_establish_session_via_handler():
 
 
 def tests(loop):
+    acct = w3.eth.account.privateKeyToAccount("0x0123456789012345678901234567890123456789012345678901234567890123")
+    
     # await test_establish_session()
     test_establish_session_via_handler()
 
