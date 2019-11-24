@@ -16,8 +16,9 @@ from api.exceptions import LambdaError
 from attrdict import AttrDict
 from hexbytes import HexBytes
 from pymonad.Maybe import Nothing
-from pynamodb.attributes import BooleanAttribute
+from pynamodb.attributes import BooleanAttribute, MapAttribute
 from utils import can_base64_decode
+from web3 import Web3, HTTPProvider
 from .common.lib import _hash
 from web3.auto import w3
 from .send_mail import send_email, format_backup
@@ -213,6 +214,23 @@ def get_ssm_param(name, decode_json=False, with_decryption=False):
     return value
 
 
+MEMBERSHIP_C_ABI = [{"constant":False,"inputs":[{"name":"votingAddr","type":"address"},{"name":"weight","type":"uint32"},{"name":"startTime","type":"uint48"},{"name":"endTime","type":"uint48"}],"name":"setMember","outputs":[],"payable":False,"stateMutability":"nonpayable","type":"function"}]
+GET_BALANCE_ABI = [{"constant":True,"inputs":[{"name":"v","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"}]
+
+
+def lookup_group_contract(group):
+    group_map = json.loads(get_env('pVoterGroupToAddressMapJson'))
+    # if len(group_map) == 0 or type(group_map) is not dict:
+    return group_map[group]
+
+
+def mk_weighting_allocation(w3, my_addr, to_addr, group, weight):
+    membership_addr = lookup_group_contract(group)
+    c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_C_ABI)
+    tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction({'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
+    return tx
+
+
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr']), 'payload keys')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -230,8 +248,17 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     try:
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
         account = Account.privateKeyToAccount(priv_key)
+        my_addr = account.address
+        w3 = Web3(HTTPProvider(f"https://nodes.{get_env('pApiDomainRaw')}:8545"))
+        voter_weights: MapAttribute = voter_enrolled.weightingMap
+        unsigned_transactions = [mk_weighting_allocation(w3, my_addr, eth_address, g, w) for (g, w) in
+                                 voter_weights.attribute_values.items() if w > 0]
+        unsigned_transactions.append(
+            {'from': my_addr, 'to': eth_address, 'value': w3.toWei(1, 'ether'), 'gas': 8000000})
+        log.info(json.dumps(unsigned_transactions, indent=2))
     except Exception as e:
         log.error(f'got exception during finalization setup: {e}')
+        raise e
 
     # main
     try:
@@ -239,7 +266,6 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
             VoterEnrolmentModel.claimed.set(True)
         ], condition=VoterEnrolmentModel.claimed == False)
 
-        # w3.eth.
         # todo: publish data to smart contract
         membership_txid = HexBytes("0x1234")
         # todo: send eth
@@ -279,12 +305,12 @@ def test_establish_session_via_handler():
 
     ctx = AttrDict(loop='loop')
     acct = w3.eth.account.privateKeyToAccount(_hash(b'hello')[:32])
-    test_email_addr = 'max-test@xk.io'
+    test_email_addr = 'test-ba-123@xk.io'
 
     VoterEnrolmentModel(
         email_addr=test_email_addr,
         first_name="max",
-        weightingMap={},
+        weightingMap={'EX': 0, 'SCALE': 1, 'CORP': 1, 'FELLOW': 3, 'IND': 1, 'STUD': 0},
         claimed=False
     ).save()
 

@@ -78,6 +78,13 @@ Parameters:
     Description: A DNS compatible name prefix to use in the names of resources (e.g. fluxvote-testnet)
     Type: String
     MaxLength: '20'
+
+  EnvironmentName:
+    Description: A short name describing your environment (e.g. 'prod' or 'dev'). Production should _ALWAYS_ be called 'prod'!!
+    Default: prod
+    Type: String
+    MaxLength: '10'
+
   AdminEmail:
     Description: The email address for the administrator. Alerts and configuration items will be sent here, including SSH keys.
     Type: String
@@ -194,6 +201,10 @@ Parameters:
   pCreateAlb:
     Type: String
     Default: 'false'
+
+  pVoterGroupToAddressMapJson:
+    Type: String
+    Default: "{}"
 
 
 Conditions:
@@ -655,6 +666,8 @@ Resources:
         pApiStageName: svprod
         pLambdaLayer: !Ref rLambdaLayer
         pAdminEmail: !Ref AdminEmail
+        pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
+        pEnv: !Ref EnvironmentName
 
 
   rPublicLoadBalancer:

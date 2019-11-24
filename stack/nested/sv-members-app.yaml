@@ -34,6 +34,10 @@ Parameters:
     Description: The url fragment between he end of the domain name and the path specified by AWS::Serverless::Functions
     Default: members
     Type: String
+
+  pVoterGroupToAddressMapJson:
+    Type: String
+
     
 
 Conditions:
@@ -50,6 +54,7 @@ Globals:
         PYTHON_PATH: "/opt:/opt/deps"
         PYTHONPATH: "/opt:/opt/deps"
         pMembershipContract: !Ref pMembershipContract
+        pApiDomainRaw: !Ref pApiDomainRaw
   Api:
     EndpointConfiguration: REGIONAL
     Cors:
@@ -95,7 +100,9 @@ Resources:
           ENV_VAR_TEST: 'uri://test-value'
           pNamePrefix: !Ref pNamePrefix
           pAdminEmail: !Ref pAdminEmail
+          pApiDomainRaw: !Ref pApiDomainRaw
           VOTING_ALPHA_TEST_ENV: !If [ cDev, "True", "False" ]
+          pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
       Handler: api.message_handler
       Runtime: python3.7
       Layers:

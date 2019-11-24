@@ -847,6 +847,7 @@ def get_ns_details(sn, r_name):
 def default_params_from_env(env_name, evs):
     params = {
         'NamePrefix': evs.NAME_PREFIX,
+        'EnvironmentName': env_name,
         'HostedZoneDomain': evs.DOMAIN,
         'EC2InstanceType': 't2.small' if env_name != 'prod' else 't3.medium',
         'NumberOfEthereumConsensusNodes': '1',
@@ -854,7 +855,8 @@ def default_params_from_env(env_name, evs):
         'Subdomain': evs.SUBDOMAIN,
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
-        'pCreateAlb': 'true' if env_name == 'dev' else 'false'
+        'pCreateAlb': 'true' if env_name == 'dev' else 'false',
+        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name])
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
@@ -1142,6 +1144,21 @@ def run_script(ctx, script_name, args, gen_args):
 
 
 scripts.add_command(run_script)
+
+
+voter_group_to_scs = {
+    'dev': {
+        "EX,SCALE,CORP": "0xA314d5aE9c6f4F9a8e1969449E33A762bBDfc26B",
+        "EX": "0xFBa7d684E31D3537433d7D385Ec8A218caf149B8",
+        "SCALE": "0x74330077C3ca1a3BB7A9ab043F9e40cB6b64E4Ff",
+        "CORP": "0xE09083ae054E7e8167080F54879da8aa562f71eA",
+        "FELLOW": "0x0DBEf5F598e39e72c15870Ae872d6b03180e3a46",
+        "IND": "0x47C6Ce20948512b229ECA90A31dF43B347CF802B",
+        "STUD": "0x7C7261c54BFeE8368ab0Fddd492bf1FC3c285540"
+    },
+    'prod': {}
+}
+
 
 # monkey patch so usage output looks nicer
 sys.argv[0] = './manage'
