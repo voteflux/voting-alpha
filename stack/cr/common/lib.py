@@ -432,7 +432,7 @@ def gen_chainspec_json(poa_addresses: list, service_addresses: list, enode_pks: 
         "engine": {
             "authorityRound": {
                 "params": {
-                    "stepDuration": "5",
+                    "stepDuration": "1",
                     "blockReward": "0x4563918244F40000",
                     "validators": {
                         "multi": {

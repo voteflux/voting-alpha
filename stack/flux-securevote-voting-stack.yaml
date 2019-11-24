@@ -598,6 +598,23 @@ Resources:
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
 
+  rConsensusNode1:
+    Type: AWS::CloudFormation::Stack
+    Condition: cCreateNodes
+    Properties:
+      TemplateURL: ./nested/sv-consensus-node-new.yaml
+      Parameters:
+        pChainSpecUrl: !GetAtt rParamsCr.ChainSpecUrl
+        pEC2InstanceType: !Ref EC2InstanceType
+        pSecurityGroup: !Ref rConsensusSG
+        pAmiId: !Ref pAmiId
+        pNodeNumber: '1'
+        pNamePrefix: !Ref NamePrefix
+        pAvailabilityZone: !Sub ${AWS::Region}b
+        pSignerAddress: !Select [ 1, !GetAtt rEthPrivkeysCr.PoAAddresses ]
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+
   # todo: macro these out
   rPublicNode0:
     Type: AWS::CloudFormation::Stack
@@ -616,6 +633,23 @@ Resources:
         pSubdomain: !Ref Subdomain
         pEipAddress: !Select [ 0, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oPublicIps ] ]
 
+  rPublicNode1:
+    Type: AWS::CloudFormation::Stack
+    Condition: cCreateNodes
+    Properties:
+      TemplateURL: ./nested/sv-public-node-new.yaml
+      Parameters:
+        pChainSpecUrl: !GetAtt rParamsCr.ChainSpecUrl
+        pEC2InstanceType: !Ref EC2InstanceType
+        pSecurityGroup: !Ref rPublicSG
+        pAmiId: !Ref pAmiId
+        pNodeNumber: '1'
+        pNamePrefix: !Ref NamePrefix
+        pAvailabilityZone: !Sub ${AWS::Region}b
+        pDomain: !Ref HostedZoneDomain
+        pSubdomain: !Ref Subdomain
+        pEipAddress: !Select [ 1, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oPublicIps ] ]
+
   rPublicNodeEips:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -629,7 +663,9 @@ Resources:
     Condition: cCreateChaincodeStack
     DependsOn:
       - rPublicNode0
+      - rPublicNode1
       - rConsensusNode0
+      - rConsensusNode1
       - rEthPrivkeysCr
     Properties:
       TemplateURL: ./nested/sv-chaincode-loader.yaml
@@ -680,6 +716,7 @@ Resources:
         pNamePrefix: !Ref NamePrefix
         pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
+        pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
 
   rAlbDomain:
     Type: AWS::Route53::RecordSet
@@ -706,8 +743,11 @@ Outputs:
   oPublicNode0Ip:
     Condition: cCreateNodes
     Value: !GetAtt rPublicNode0.Outputs.oPublicIp
-  oWeb3Provider:
+  oPublicNode1Ip:
     Condition: cCreateNodes
+    Value: !GetAtt rPublicNode1.Outputs.oPublicIp
+  oWeb3Provider:
+    Condition: cCreateAlb
     Value: !If [
             cCreateAlb,
             !Sub 'https://nodes.${Subdomain}.${HostedZoneDomain}:8545',

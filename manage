@@ -850,12 +850,12 @@ def default_params_from_env(env_name, evs):
         'EnvironmentName': env_name,
         'HostedZoneDomain': evs.DOMAIN,
         'EC2InstanceType': 't2.small' if env_name != 'prod' else 't3.medium',
-        'NumberOfEthereumConsensusNodes': '1',
-        'NumberOfEthereumPublicNodes': '1',
+        'NumberOfEthereumConsensusNodes': '2',
+        'NumberOfEthereumPublicNodes': '2',
         'Subdomain': evs.SUBDOMAIN,
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
-        'pCreateAlb': 'true' if env_name == 'dev' else 'false',
+        'pCreateAlb': 'true',
         'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name])
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))

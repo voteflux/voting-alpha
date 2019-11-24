@@ -6,15 +6,14 @@ from typing import NamedTuple, Union
 
 import eth_utils
 import jwt
-import web3
 from api.models import RequestTypes
 from attrdict import AttrDict
+from eth_account import Account
 from eth_account.messages import SignableMessage, encode_defunct
 from hexbytes import HexBytes
 from lambda_decorators import async_handler, dump_json_body, load_json_body, LambdaDecorator, after
 from .db import verify_session_token
 from .lib import mk_logger
-from web3.auto import w3
 
 from .exceptions import LambdaError
 
@@ -75,7 +74,7 @@ def ensure_session(f):
             signature_bytes = eth_utils.to_bytes(hexstr=data.sig)
             address = None
             try:
-                address = w3.eth.account.recover_message(signable_msg, signature=signature_bytes)
+                address = Account.recover_message(signable_msg, signature=signature_bytes)
             except Exception as e:
                 log.warning(f"Exception occured {e}")
                 raise LambdaError(403, "Invalid signature.")

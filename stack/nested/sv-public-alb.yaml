@@ -14,6 +14,8 @@ Parameters:
     Default: "subnet-0635c95f,subnet-642dd012,subnet-b900d6dd"
   pPublicNode0:
     Type: String
+  pPublicNode1:
+    Type: String
 
 
 Resources:
@@ -52,6 +54,8 @@ Resources:
       Targets:
         - Id: !Ref pPublicNode0
           Port: 8546
+        - Id: !Ref pPublicNode1
+          Port: 8546
       TargetType: instance
       VpcId: !Ref pVpcId
 
@@ -63,6 +67,8 @@ Resources:
       Protocol: HTTP
       Targets:
         - Id: !Ref pPublicNode0
+          Port: 8545
+        - Id: !Ref pPublicNode1
           Port: 8545
       TargetType: instance
       VpcId: !Ref pVpcId

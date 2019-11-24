@@ -5,6 +5,9 @@ Parameters:
   pNamePrefix:
     Type: String
 
+  pEnv:
+    Type: String
+
   pMembershipContract:
     Type: String
 
@@ -42,7 +45,7 @@ Parameters:
 
 Conditions:
   cFalse: !Equals [ 'true', 'false' ]
-  cDev: !Equals [ !Ref pNamePrefix, "sv-dev-ba-agm-2019" ]
+  cDev: !Or [ !Equals [ !Ref pNamePrefix, "sv-dev-ba-agm-2019" ], !Equals [ !Ref pEnv, "dev" ] ]
 
 
 Globals:
@@ -95,6 +98,8 @@ Resources:
     Properties:
       FunctionName: !Sub ${pNamePrefix}-member-registration
       CodeUri: ../app/members
+      MemorySize: 1024
+      Timeout: 300
       Environment:
         Variables:
           ENV_VAR_TEST: 'uri://test-value'
@@ -103,6 +108,7 @@ Resources:
           pApiDomainRaw: !Ref pApiDomainRaw
           VOTING_ALPHA_TEST_ENV: !If [ cDev, "True", "False" ]
           pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
+          pEthHost: !Ref pEthHost
       Handler: api.message_handler
       Runtime: python3.7
       Layers:

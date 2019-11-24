@@ -20,7 +20,6 @@ from pynamodb.attributes import BooleanAttribute, MapAttribute
 from utils import can_base64_decode
 from web3 import Web3, HTTPProvider
 from .common.lib import _hash
-from web3.auto import w3
 from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
@@ -231,6 +230,10 @@ def mk_weighting_allocation(w3, my_addr, to_addr, group, weight):
     return tx
 
 
+class OnboardingException(Exception):
+    pass
+
+
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr']), 'payload keys')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -249,12 +252,12 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
         account = Account.privateKeyToAccount(priv_key)
         my_addr = account.address
-        w3 = Web3(HTTPProvider(f"https://nodes.{get_env('pApiDomainRaw')}:8545"))
+        w3 = Web3(HTTPProvider(get_env('pEthHost')))
         voter_weights: MapAttribute = voter_enrolled.weightingMap
         unsigned_transactions = [mk_weighting_allocation(w3, my_addr, eth_address, g, w) for (g, w) in
                                  voter_weights.attribute_values.items() if w > 0]
         unsigned_transactions.append(
-            {'from': my_addr, 'to': eth_address, 'value': w3.toWei(1, 'ether'), 'gas': 8000000})
+            {'from': my_addr, 'to': eth_address, 'value': w3.toWei(1, 'ether'), 'gas': 8000000, 'gasPrice': 1})
         log.info(json.dumps(unsigned_transactions, indent=2))
     except Exception as e:
         log.error(f'got exception during finalization setup: {e}')
@@ -262,30 +265,48 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
 
     # main
     try:
+        start = datetime.datetime.now().isoformat()
+        log.info(f"main start: {start}")
+        # we can use the condition to avoid a race condition, but need to do this first.
         voter_enrolled.update([
             VoterEnrolmentModel.claimed.set(True)
         ], condition=VoterEnrolmentModel.claimed == False)
 
-        # todo: publish data to smart contract
-        membership_txid = HexBytes("0x1234")
-        # todo: send eth
+        out_txs = {}
+        txids = []
+        for unsigned_tx in unsigned_transactions:
+            next_nonce = w3.eth.getTransactionCount(my_addr)
+            # txs = list([dict(nonce=next_nonce + i, **prev_tx) for (i, prev_tx) in enumerate(unsigned_transactions)])
+            raw_tx = account.signTransaction(dict(nonce=next_nonce, **unsigned_tx)).rawTransaction
+            # raw_txs = list([account.signTransaction(tx).rawTransaction for tx in txs])
+            txids.append(w3.eth.sendRawTransaction(raw_tx))
+            # txids = list([w3.eth.sendRawTransaction(tx) for tx in raw_txs])
+            w3.eth.waitForTransactionReceipt(txids[-1])
+            # await_all = list([w3.eth.waitForTransactionReceipt(txid) for txid in txids])
+            txr = w3.eth.getTransactionReceipt(txids[-1])
+            out_txs[txids[-1]] = txr
+            # txrs = list([w3.eth.getTransactionReceipt(txid) for txid in txids])
+            # if any([txr['status'] == 0 for txr in txrs]):
+            if txr['status'] == 0:
+                raise OnboardingException()
+
+        log.info(out_txs[txids[0]])
+        log.info(out_txs[txids[-1]])
 
         session.update([
             SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
-            SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
-        ])
-        # todo: we need to mark the operation finalized ASAP after issuing the tx
-
-        voter_enrolled.update([
-            VoterEnrolmentModel.claimed.set(True)
+            # SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
         ])
 
         log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
+        log.info(f"main start: {start}")
+        log.info(f"main end: {datetime.datetime.now().isoformat()}")
         return {'result': 'success'}
     except Exception as e:
         # this would be bad, need to have the above as atomic as possible.
         log.error(e)
         if "An error occurred (ConditionalCheckFailedException)" in str(e):
+            # this means we couldn't update the enrolment table with the claim
             pass
         raise LambdaError(400, {'result': 'failure', 'exception': [str(e), repr(e)]})
 
@@ -304,7 +325,7 @@ def test_establish_session_via_handler():
     global LAST_GENERATED_OTP
 
     ctx = AttrDict(loop='loop')
-    acct = w3.eth.account.privateKeyToAccount(_hash(b'hello')[:32])
+    acct = Account.privateKeyToAccount(_hash(b'hello')[:32])
     test_email_addr = 'test-ba-123@xk.io'
 
     VoterEnrolmentModel(
@@ -323,9 +344,9 @@ def test_establish_session_via_handler():
 
         print(signed)
         print(msg_to_sign)
-        print('recover msg', w3.eth.account.recover_message(msg_to_sign, signature=signed.signature))
-        print('recover hash1', w3.eth.account.recoverHash(signed.messageHash, signature=signed.signature))
-        print('recover hash2', w3.eth.account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
+        print('recover msg', Account.recover_message(msg_to_sign, signature=signed.signature))
+        print('recover hash1', Account.recoverHash(signed.messageHash, signature=signed.signature))
+        print('recover hash2', Account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
 
         sig: HexBytes = signed.signature
         r = message_handler(mk_msg(msg_to_sign, sig), ctx)
@@ -366,8 +387,6 @@ def test_establish_session_via_handler():
 
 
 def tests(loop):
-    acct = w3.eth.account.privateKeyToAccount("0x0123456789012345678901234567890123456789012345678901234567890123")
-    
     # await test_establish_session()
     test_establish_session_via_handler()
 
