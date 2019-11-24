@@ -38,8 +38,7 @@ Parameters:
 
 Conditions:
   cFalse: !Equals [ 'true', 'false' ]
-
-
+  cDev: !Equals [ !Ref pNamePrefix, "sv-dev-ba-agm-2019" ]
 
 
 Globals:
@@ -96,6 +95,7 @@ Resources:
           ENV_VAR_TEST: 'uri://test-value'
           pNamePrefix: !Ref pNamePrefix
           pAdminEmail: !Ref pAdminEmail
+          VOTING_ALPHA_TEST_ENV: !If [ cDev, "True", "False" ]
       Handler: api.message_handler
       Runtime: python3.7
       Layers:
@@ -118,6 +118,11 @@ Resources:
               - ssm:DeleteParameter
             Resource:
               - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-members-api-*
+          - Effect: Allow
+            Action:
+              - ssm:GetParameter
+            Resource:
+            - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-service-*
           - Effect: Allow
             Action:
               - dynamodb:BatchGetItem

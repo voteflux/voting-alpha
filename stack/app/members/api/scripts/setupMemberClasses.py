@@ -160,8 +160,11 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
         my_addr = account.address
         multi_c = mk_bal_px(address=_contracts_addrs[multi_])
 
+        def get_bal():
+            return multi_c.functions.balanceOf(account.address).call()
+
         def assert_bal(expected):
-            curr_bal = multi_c.functions.balanceOf(account.address).call()
+            curr_bal = get_bal()
             if curr_bal != expected:
                 raise Exception(f'balances mismatch: current: {curr_bal}, expected: {expected}')
 
@@ -177,8 +180,13 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
 
         def set_bal(g, bal):
             c_f = get_c(g).functions
-            print('admin_check', c_f.isAdmin(my_addr).call())
             return do_tx_f(c_f.setMember(my_addr, bal, 1, 1674629200))
+
+        if get_bal() > 0:
+            print('resetting balances')
+            set_bal('EX', 0)
+            set_bal('CORP', 0)
+            set_bal('IND', 0)
 
         assert_bal(0)
         do_tx_f(get_c('EX').functions.setMember(my_addr, 3, 1474629200, 1674629200))
@@ -187,6 +195,8 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
         assert_bal(8)
         do_tx_f(get_c('IND').functions.setMember(my_addr, 5, 0, 2000000000))
         assert_bal(8)
+
+        print("BALANCES SEEM TO WORK FINE")
 
     test_balances()
     #

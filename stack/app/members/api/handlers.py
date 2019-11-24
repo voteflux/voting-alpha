@@ -35,11 +35,13 @@ LAST_GENERATED_OTP = None
 ssm = boto3.client('ssm')
 
 
+is_test_env = get_env('VOTING_ALPHA_TEST_ENV', False) == "True"
+
 # 8am Monday 25th
-starting_timestamp = 1574629200 if get_env('VOTING_ALPHA_TEST_ENV', False) != "True" else 0
+starting_timestamp = 1574629200 if not is_test_env else 0
 
 # 11am minus 10 minutes (this leaves 5 min slack)
-ending_timestamp = 1574640000 - 600 if get_env('VOTING_ALPHA_TEST_ENV', False) != "True" else 2574597120
+ending_timestamp = 1574640000 - 600 if not is_test_env else 2574597120
 
 
 @post_common
@@ -229,20 +231,18 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
         account = Account.privateKeyToAccount(priv_key)
     except Exception as e:
-        pass
+        log.error(f'got exception during finalization setup: {e}')
 
     # main
     try:
         voter_enrolled.update([
             VoterEnrolmentModel.claimed.set(True)
         ], condition=VoterEnrolmentModel.claimed == False)
-        # todo: we need to use some kind of sync key to avoid race conditions in the onboarding process
 
         # w3.eth.
         # todo: publish data to smart contract
         membership_txid = HexBytes("0x1234")
-
-        # todo: get proof of tx in blockchain via merkle branch to block header
+        # todo: send eth
 
         session.update([
             SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
