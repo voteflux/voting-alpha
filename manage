@@ -846,7 +846,7 @@ def default_params_from_env(env_name, evs):
     params = {
         'NamePrefix': evs.NAME_PREFIX,
         'HostedZoneDomain': evs.DOMAIN,
-        'EC2InstanceType': 't2.small',
+        'EC2InstanceType': 't2.small' if env_name != 'prod' else 't3.medium',
         'NumberOfEthereumConsensusNodes': '1',
         'NumberOfEthereumPublicNodes': '1',
         'Subdomain': evs.SUBDOMAIN,
@@ -970,6 +970,10 @@ VUE_APP_API_ENDPOINT={outputs.oApiUrl}
 VUE_APP_TOKEN_LOOKUP={outputs.oTokenAbbrLookupAddr}
 
 """)
+            try:
+                os.system(f'notify-send "CFN Stack: {stack_name}"' 'Completed Deployment')
+            except:
+                pass
     else:
         print_output("Initiated deploy of {}\n\nLink: {}".format(sid, cfn_evt_url))
 

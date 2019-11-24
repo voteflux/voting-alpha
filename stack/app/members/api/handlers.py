@@ -18,7 +18,7 @@ from web3.auto import w3
 from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
-from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, encode_sv_signed_msg, \
+from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, \
     verifyDictKeys, encode_and_sign_msg
 from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
@@ -42,7 +42,7 @@ async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, sess
 
 async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
-    verify(eth_address == msg.payload.address, 'verify ethereum addresses match')
+    verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
 
     # todo: make sure voters aren't enrolled yet
@@ -192,6 +192,7 @@ async def test_establish_session():
     addr = '0x1234'
     r = await establish_session('', '', AttrDict(payload={'email_addr': 'max-test@xk.io', 'address': addr}), addr, AttrDict(token='asdf'))
     print(r)
+
 
 
 def mk_msg(msg_to_sign, sig):

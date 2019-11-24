@@ -53,7 +53,11 @@ Globals:
         pMembershipContract: !Ref pMembershipContract
   Api:
     EndpointConfiguration: REGIONAL
-    Cors: !Sub "'*.${pApiDomainRaw}'"
+    Cors:
+      AllowMethods: "'GET,POST,OPTIONS'"
+      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+      AllowOrigin: "'*'"
+      # AllowOrigin: !Sub "'*.${pApiDomainRaw}'"
 
 
 Resources:
@@ -114,6 +118,17 @@ Resources:
               - ssm:DeleteParameter
             Resource:
               - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-members-api-*
+          - Effect: Allow
+            Action:
+              - dynamodb:BatchGetItem
+              - dynamodb:GetItem
+              - dynamodb:Query
+              - dynamodb:Scan
+              - dynamodb:BatchWriteItem
+              - dynamodb:PutItem
+              - dynamodb:UpdateItem
+            Resource:
+              - !Sub arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/${pNamePrefix}-*
 
   rMembersOnboardApi:
     Type: AWS::Serverless::Api

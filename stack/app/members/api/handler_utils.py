@@ -9,7 +9,7 @@ import jwt
 import web3
 from api.models import RequestTypes
 from attrdict import AttrDict
-from eth_account.messages import SignableMessage
+from eth_account.messages import SignableMessage, encode_defunct
 from hexbytes import HexBytes
 from lambda_decorators import async_handler, dump_json_body, load_json_body, LambdaDecorator, after
 from .db import verify_session_token
@@ -17,7 +17,6 @@ from .lib import mk_logger
 from web3.auto import w3
 
 from .exceptions import LambdaError
-
 
 log = mk_logger('members-api')
 
@@ -50,14 +49,15 @@ def verifyDictKeys(d, keys):
     return len(d) == len(keys)
 
 
-def encode_sv_signed_msg(msg_bytes: bytes) -> SignableMessage:
-    return SignableMessage(b'S', f'V.light.msg.v0.1:{len(msg_bytes)}:'.encode(), msg_bytes)
+# def encode_sv_signed_msg(msg_bytes: bytes) -> SignableMessage:
+#     SignableMessage
+#     return SignableMessage(b'S', f'V.light.msg.v0.1:{len(msg_bytes)}:'.encode(), msg_bytes)
 
 
 def encode_and_sign_msg(msg, acct) -> (SignableMessage, bytes, Signature):
     msg_str = json.dumps(msg)
     msg_bytes = eth_utils.to_bytes(text=msg_str)
-    msg_to_sign = encode_sv_signed_msg(msg_bytes)
+    msg_to_sign = encode_defunct(msg_bytes)
     full_msg = msg_to_sign.version + msg_to_sign.header + msg_to_sign.body
     signed = acct.sign_message(msg_to_sign)
     return msg_to_sign, full_msg, signed
@@ -68,17 +68,20 @@ def ensure_session(f):
         async def inner2():
             data = event['body']
             msg_encoded: str = data.msg
-            signable_msg = encode_sv_signed_msg(eth_utils.to_bytes(text=msg_encoded))
+            signable_msg = encode_defunct(eth_utils.to_bytes(text=msg_encoded))
             print(data.sig)
             signature_bytes = eth_utils.to_bytes(hexstr=data.sig)
+            address = None
             try:
                 address = w3.eth.account.recover_message(signable_msg, signature=signature_bytes)
             except Exception as e:
-                log.warning(f"Exception occured ")
+                log.warning(f"Exception occured {e}")
+                raise LambdaError(403, "Invalid signature.")
             if not eth_utils.is_address(address):
                 raise LambdaError(403, "Invalid signature.")
             msg: Message = AttrDict(json.loads(msg_encoded))
-            if 'request' not in msg or not (2 <= len(msg) <= 3) or len(msg.request) > 30 or type(msg.request) is not str:
+            if 'request' not in msg or not (2 <= len(msg) <= 3) or len(msg.request) > 30 or type(
+                    msg.request) is not str:
                 raise LambdaError(403, "Invalid message.")
             if 'jwt' not in msg and msg.request != RequestTypes.ESTABLISH_SESSION.value:
                 raise LambdaError(403, "Invalid message.")
@@ -95,6 +98,7 @@ def ensure_session(f):
 
             # todo: more?
             return await f(event, ctx, *args, msg=msg, eth_address=address, jwt_claim=claim, session=session, **kwargs)
+
         try:
             return await inner2()
         except Exception as e:
@@ -102,6 +106,7 @@ def ensure_session(f):
             traceback.print_exc()
             log.error(f"[ERROR]: {repr(e)} {str(e)}, {type(e)}")
             raise e
+
     return inner
 
 
@@ -120,7 +125,12 @@ class default_good_unless_exception(LambdaDecorator):
     def on_exception(self, exception):
         if type(exception) is LambdaError:
             return {'statusCode': exception.code,
-                    'body': exception.client_response if exception.client_response else exception.msg
+                    'body': exception.client_response if exception.client_response else exception.msg,
+                    'headers': {
+                        'access-control-allow-headers': "Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent",
+                        'access-control-allow-methods': "GET,POST,OPTIONS",
+                        'access-control-allow-origin': "*"
+                    }
                     }
         raise exception
 
@@ -149,5 +159,3 @@ def get_common(f):
 # note: async_handler should be last in chain (i.e. all async functions after)
 def post_common(f):
     return all_common(load_json_body(attrdict_body(async_handler(f))))
-
-

@@ -109,7 +109,6 @@ Resources:
         - Name: token-abbr-lookup
           Type: deploy
           Output: TokenAbbrLookupAddr
-        -
 
 
   rChaincodeLambda:
