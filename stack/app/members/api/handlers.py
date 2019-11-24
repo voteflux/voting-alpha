@@ -3,6 +3,7 @@ import base64
 import datetime
 import json
 import os
+import sys
 
 import jwt
 from eth_account.messages import encode_defunct, SignableMessage
@@ -29,7 +30,6 @@ LAST_GENERATED_OTP = None
 @post_common
 @ensure_session
 async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, session):
-    log.warning(f"** UNSAFE - DEBUG ** - {event['body']}")
     _h = {
         RequestTypes.ESTABLISH_SESSION.value: establish_session,
         RequestTypes.PROVIDE_OTP.value: provide_otp,
@@ -307,8 +307,8 @@ def tests(loop):
 
 
 if __name__ == "__main__":
-    tests('')
-    # loop = asyncio.new_event_loop()
-    # tests(loop)
-    # loop.run_forever()
-
+    if get_env('VOTING_ALPHA_TEST_ENV', '') != "True":
+        log.error("set VOTING_ALPHA_TEST_ENV to 'True' to test.")
+        sys.exit(1)
+    else:
+        tests('')
