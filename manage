@@ -1066,7 +1066,13 @@ script_info = {
         'function': '_send_coins',
         'args': [('oWeb3Provider', 'cfn')]
     },
-
+    'createBallots': {
+        'module': 'stack.app.members.api.scripts.createBallots',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_create_ballots',
+        'args': [('oWeb3Provider', 'cfn'), ('oIndexAddr', 'cfn'), ('oDemocHash', 'cfn')]
+    },
 }
 
 
@@ -1137,9 +1143,9 @@ def run_script(ctx, script_name, args, gen_args):
 
     script_module = importlib.import_module(our_script['module'])
 
+    _args = []
     if gen_args:
         stack_ds = cfn_outputs_to_dict(get_stack_details(evs.STACK_NAME)['Outputs'])
-        _args = []
         for (name, source) in our_script['args']:
             if source == 'cfn':
                 _args.append(stack_ds[name])
@@ -1168,22 +1174,15 @@ VUE_APP_INDEX_CONTRACT_ADDR={outputs.oIndexAddr}
 VUE_APP_AUX_CONTRACT_ADDR={outputs.oBBFarmAux2Addr}
 VUE_APP_API_ENDPOINT={outputs.oApiUrl}
 VUE_APP_TOKEN_LOOKUP={outputs.oTokenAbbrLookupAddr}
+VUE_APP_CHAINSPEC_URL={outputs.oChainSpecUrl}
 
 """)
 
 
 
 voter_group_to_scs = {
-    'dev': {
-        "EX,SCALE,CORP": "0xA314d5aE9c6f4F9a8e1969449E33A762bBDfc26B",
-        "EX": "0xFBa7d684E31D3537433d7D385Ec8A218caf149B8",
-        "SCALE": "0x74330077C3ca1a3BB7A9ab043F9e40cB6b64E4Ff",
-        "CORP": "0xE09083ae054E7e8167080F54879da8aa562f71eA",
-        "FELLOW": "0x0DBEf5F598e39e72c15870Ae872d6b03180e3a46",
-        "IND": "0x47C6Ce20948512b229ECA90A31dF43B347CF802B",
-        "STUD": "0x7C7261c54BFeE8368ab0Fddd492bf1FC3c285540"
-    },
-    'prod': {}
+    'dev': '{"EX,SCALE,CORP": "0xD0237d3a126880Aaadfe3c83b96Ce87267B76F8d", "EX": "0xD6BD84320FDb4BB797f910fbb78Fda4737Fe355F", "SCALE": "0x91f64c36E3ed2728Dc3c02Dc66891DD35BCebA9C", "CORP": "0xbFB3fc489A4a5dEf84480A5bfc3df0a82FaA8B29", "FELLOW": "0xcB5993006192654b53802Eb0A308b1fFea9FEb32", "IND": "0x2F7DD97398267C51741cF123747ADbE22566BCb8", "STUD": "0x23F11d26028C4343C8E49487F7db3f87A752296d"}',
+    'prod': '{"EX,SCALE,CORP": "0x012a9Db1184C054Ad933aD6A951d925a0004Df8b", "EX": "0x28F56525a76eF47e95b856927A29f1C21AeA463d", "SCALE": "0x99F15F49E5E88295Ef5e1aE8daCE6709cCCC01Ec", "CORP": "0x60F7C513eCe7AFD2BD95ffc218a8c0Ac34E989a9", "FELLOW": "0xf646789fCe64761008e67026c2045308751E52bc", "IND": "0x722871602A99c01Effafc29F88EB59d8a36Ac9FE", "STUD": "0x446bd9Ac0abFfb3F3574C2287066616A6B0a0181"}'
 }
 
 

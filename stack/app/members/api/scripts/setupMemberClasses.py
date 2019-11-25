@@ -121,16 +121,16 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
 
         return contracts_addrs
 
-    # _contracts_addrs = step1()
-    _contracts_addrs = {
-        "EX,SCALE,CORP": "0xA314d5aE9c6f4F9a8e1969449E33A762bBDfc26B",
-        "EX": "0xFBa7d684E31D3537433d7D385Ec8A218caf149B8",
-        "SCALE": "0x74330077C3ca1a3BB7A9ab043F9e40cB6b64E4Ff",
-        "CORP": "0xE09083ae054E7e8167080F54879da8aa562f71eA",
-        "FELLOW": "0x0DBEf5F598e39e72c15870Ae872d6b03180e3a46",
-        "IND": "0x47C6Ce20948512b229ECA90A31dF43B347CF802B",
-        "STUD": "0x7C7261c54BFeE8368ab0Fddd492bf1FC3c285540"
-    }
+    _contracts_addrs = step1()
+    # _contracts_addrs = {
+    #     "EX,SCALE,CORP": "0xA314d5aE9c6f4F9a8e1969449E33A762bBDfc26B",
+    #     "EX": "0xFBa7d684E31D3537433d7D385Ec8A218caf149B8",
+    #     "SCALE": "0x74330077C3ca1a3BB7A9ab043F9e40cB6b64E4Ff",
+    #     "CORP": "0xE09083ae054E7e8167080F54879da8aa562f71eA",
+    #     "FELLOW": "0x0DBEf5F598e39e72c15870Ae872d6b03180e3a46",
+    #     "IND": "0x47C6Ce20948512b229ECA90A31dF43B347CF802B",
+    #     "STUD": "0x7C7261c54BFeE8368ab0Fddd492bf1FC3c285540"
+    # }
     print(json.dumps(_contracts_addrs, indent=4))
 
     def to_bytes32(_str):
@@ -154,7 +154,7 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
                     print(receipt['status'])
                     print(f'Added {g} in {w3.toHex(txid)}')
 
-    # step2(_contracts_addrs)
+    step2(_contracts_addrs)
 
     def test_balances():
         my_addr = account.address
@@ -198,7 +198,7 @@ def _setup_member_classes(httpProvider, erc20_balance_proxy_addr):
 
         print("BALANCES SEEM TO WORK FINE")
 
-    test_balances()
+    # test_balances()
     #
     # c = mk_bal_px(address=_contracts_addrs[multi_])
     # c2 = mk_membership_sc(address=_contracts_addrs[multi_])

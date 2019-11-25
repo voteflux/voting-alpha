@@ -62,7 +62,7 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
 
     # check times first
     verify(time.time() >= starting_timestamp, 'early rego attempt', 'Cannot register voters before 8am Monday 25th.')
-    verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
+    # verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
 
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
@@ -249,8 +249,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
 
     # setup
     try:
-        name_prefix = get_env('pNamePrefix')
-        priv_key = get_ssm_param(f"sv-{name_prefix}-nodekey-service-publish", with_decryption=True)
+        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
         account = Account.privateKeyToAccount(priv_key)
         my_addr = account.address
         w3 = Web3(HTTPProvider(get_env('pEthHost')))
@@ -301,10 +300,9 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
             # SessionModel.tx_proof.set(hash_up(membership_txid, eth_address, msg.payload.email_addr, jwt_claim.token))
         ])
 
-        log.warning(f"session at end of finalize: {json.dumps(session.to_python(), indent=2)}")
         log.info(f"main start: {start}")
         log.info(f"main end: {datetime.datetime.now().isoformat()}")
-        return {'result': 'success', txids: list([eth_utils.to_hex(txids)])}
+        return {'result': 'success', 'txids': ','.join(txid.hex() for txid in txids)}
     except Exception as e:
         # this would be bad, need to have the above as atomic as possible.
         log.error(e)
