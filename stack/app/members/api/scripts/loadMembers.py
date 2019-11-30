@@ -35,8 +35,6 @@ def _load_members(in_file, force_overwrite=False):
     seen = set()
     dup = []
     for rowN, line in enumerate(reader):
-        # VoterEnrolmentModel(
-        # )
         email = line['email'].strip().lower()
         fname = line['first name'].strip()
         count += 1
