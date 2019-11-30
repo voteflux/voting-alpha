@@ -22,11 +22,11 @@
   "homepage": "https://github.com/voteflux/voting-alpha#readme",
   "dependencies": {
     "openzeppelin-solidity": "2.0.0",
-    "solc": "^0.5.2",
-    "truffle": "^5.0.0",
-    "typescript": "^3.2.2"
+    "solc": "^0.5.13",
+    "truffle": "^5.1.2",
+    "typescript": "^3.7.2"
   },
   "devDependencies": {
-    "truffle-typings": "^1.0.5"
+    "truffle-typings": "^1.0.8"
   }
 }
