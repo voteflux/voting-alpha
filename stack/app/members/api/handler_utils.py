@@ -70,7 +70,6 @@ def ensure_session(f):
             data = event['body']
             msg_encoded: str = data.msg
             signable_msg = encode_defunct(eth_utils.to_bytes(text=msg_encoded))
-            print(data.sig)
             signature_bytes = eth_utils.to_bytes(hexstr=data.sig)
             address = None
             try:

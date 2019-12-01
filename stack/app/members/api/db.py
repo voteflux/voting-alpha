@@ -56,9 +56,9 @@ def gen_otp_and_otp_hash(email_addr: str, eth_address: str, token: str):
 
 
 def gen_otp_hash(email_addr: str, eth_address: str, token: str, otp: str) -> bytes:
-    print('gen_otp_hash with args:', email_addr, eth_address, token, otp)
+    log.info(f'gen_otp_hash with args: {email_addr}, {eth_address}, {token}, {otp}')
     res = hash_up(email_addr.lower(), eth_address.lower(), token, otp)
-    print('gen_otp_hash result:', res)
+    log.info(f'gen_otp_hash result: {res}')
     return res
 
 
@@ -84,7 +84,7 @@ async def verify_session_token(encoded_token, email_addr, eth_address, jwt_secre
         return None, None
     session = session.getValue()
     session_valid = session.not_valid_after > now() > session.not_valid_before
-    log.warning(f"[DEBUG] {dict(session_valid=session_valid, session=session, nva=session.not_valid_after, nvb=session.not_valid_before, claim=claim)}")
+    # log.warning(f"[DEBUG] {dict(session_valid=session_valid, session=session, nva=session.not_valid_after, nvb=session.not_valid_before, claim=claim)}")
     return (claim, session) if session_valid and anon_id == claim.anon_id else (None, None)
 
 

@@ -54,6 +54,7 @@ async def message_handler(event, ctx, msg: Message, eth_address, jwt_claim, sess
         RequestTypes.PROVIDE_BACKUP.value: send_backup_email,
         RequestTypes.FINAL_CONFIRM.value: confirm_and_finalize_onboarding,
     }
+    log.info(f"Running {msg.request} for {eth_address}")
     return await _h[msg.request](event, ctx, msg, eth_address, jwt_claim, session)
 
 
@@ -218,12 +219,17 @@ GET_BALANCE_ABI = [{"constant":True,"inputs":[{"name":"v","type":"address"}],"na
 
 
 def lookup_group_contract(group):
+    log.info(f"Env value for pVoterGroupToAddressMapJson: {get_env('pVoterGroupToAddressMapJson')} || {repr(get_env('pVoterGroupToAddressMapJson'))}")
+    log.info(f"Group provided: {group}, {repr(group)}, {type(group)}")
     group_map = json.loads(get_env('pVoterGroupToAddressMapJson'))
+    log.info(f"Result of json.loads: {type(group_map)} {group_map}")
     # if len(group_map) == 0 or type(group_map) is not dict:
-    return group_map[group]
+    return group_map.get(group)
 
 
 def mk_weighting_allocation(w3, my_addr, to_addr, group, weight):
+    log.info(f'mk_weighting_allocation: {w3}, {my_addr}, {to_addr}, {group}, {weight}')
+    log.info(f'mk_weighting_allocation: {w3}, {repr(my_addr)}, {repr(to_addr)}, {repr(group)}, {repr(weight)}')
     membership_addr = lookup_group_contract(group)
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_C_ABI)
     tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction({'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
@@ -258,10 +264,10 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
                                  voter_weights.attribute_values.items() if w > 0]
         unsigned_transactions.append(
             {'from': my_addr, 'to': eth_address, 'value': w3.toWei(1, 'ether'), 'gas': 8000000, 'gasPrice': 1})
-        log.info(json.dumps(unsigned_transactions, indent=2))
+        log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
     except Exception as e:
         log.error(f'got exception during finalization setup: {e}')
-        raise e
+        raise LambdaError(500, msg=f"Unexpected error: {e}", client_response="Unexpected error occured. Please try again.")
 
     # main
     try:
@@ -292,8 +298,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
             if txr['status'] == 0:
                 raise OnboardingException()
 
-        log.info(out_txs[txids[0]])
-        log.info(out_txs[txids[-1]])
+        log.info(f'first txid in out_txs: {out_txs[txids[0]]}')
+        log.info(f'last txid in out_txs: {out_txs[txids[-1]]}')
 
         session.update([
             SessionModel.state.set(SessionState.s040_MADE_ID_CONF_TX),
