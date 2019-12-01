@@ -110,6 +110,14 @@ Resources:
         - Name: token-abbr-lookup
           Type: deploy
           Output: TokenAbbrLookupAddr
+        - Name: disable-payments
+          Type: calltx
+          Function: $sv-payments.giveTimeToDemoc
+          Inputs: [ $democ-hash, 'uint256:3153600000', 'bytes32:0x0000000000000000000000000000000000000000000000000000000000000000' ]
+        - Name: disable-comm-ballots
+          Type: calltx
+          Function: $sv-index.dSetCommunityBallotsEnabled
+          Inputs: [ $democ-hash, 'bool:false' ]
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function

@@ -328,6 +328,7 @@ def _varval_type_conv(ty, val):
         'bool': lambda v: str(v).lower() == 'true',
         'address': str,
         'uint256': int,
+        'bytes32': str,
     }[ty](val)
 
 
