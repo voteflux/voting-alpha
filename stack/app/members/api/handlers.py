@@ -1,5 +1,3 @@
-import asyncio
-import base64
 import datetime
 import json
 import os
@@ -35,13 +33,11 @@ LAST_GENERATED_OTP = None
 ssm = boto3.client('ssm')
 
 
-is_test_env = get_env('VOTING_ALPHA_TEST_ENV', False) == "True"
-
 # 8am Monday 25th
-starting_timestamp = 1574629200 if not is_test_env else 0
+starting_timestamp = 1574629200
 
-# 11am minus 10 minutes (this leaves 5 min slack)
-ending_timestamp = 1574640000 - 600 if not is_test_env else 2574597120
+# 7:30am Wednesday 4th December 2019 ADST
+ending_timestamp = 1575405000
 
 
 @post_common
@@ -343,6 +339,21 @@ def test_establish_session_via_handler():
         claimed=False
     ).save()
 
+    def test_email(email, expected_status: int, expected_error_msg: str):
+        msg = AttrDict(
+            payload={'email_addr': email_addr, 'address': acct.address},
+            request=RequestTypes.ESTABLISH_SESSION.value
+        )
+        msg_to_sign, full_msg, signed = encode_and_sign_msg(msg, acct)
+
+        sig: HexBytes = signed.signature
+        # r looks like a coroutine but isn't (due to lambda library)
+        r = message_handler(mk_msg(msg_to_sign, sig), ctx)
+        # if status==200 and we expect that it's all g
+        if not (r['statusCode'] == 200 and expected_status == 200):
+            print(r)
+            raise Exception(f"should have failed: expected: {(expected_status, expected_error_msg)}; got: {r}")
+
     for expect_suceed, email_addr in [(False, 'mAX-test@xk.io'), (True, test_email_addr)]:
         msg = AttrDict(
             payload={'email_addr': email_addr, 'address': acct.address},
@@ -352,9 +363,9 @@ def test_establish_session_via_handler():
 
         print(signed)
         print(msg_to_sign)
-        print('recover msg', Account.recover_message(msg_to_sign, signature=signed.signature))
-        print('recover hash1', Account.recoverHash(signed.messageHash, signature=signed.signature))
-        print('recover hash2', Account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
+        # print('recover msg', Account.recover_message(msg_to_sign, signature=signed.signature))
+        # print('recover hash1', Account.recoverHash(signed.messageHash, signature=signed.signature))
+        # print('recover hash2', Account.recoverHash(eth_utils.keccak(b'\x19' + full_msg), signature=signed.signature))
 
         sig: HexBytes = signed.signature
         r = message_handler(mk_msg(msg_to_sign, sig), ctx)
