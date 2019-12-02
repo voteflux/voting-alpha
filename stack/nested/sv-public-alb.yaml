@@ -30,6 +30,10 @@ Resources:
           FromPort: 8545
           ToPort: 8546
           CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 443
+          ToPort: 443
+          CidrIp: 0.0.0.0/0
 
   rLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
@@ -97,15 +101,17 @@ Resources:
       Port: 8545
       Protocol: HTTPS
 
-#  rListenerHttpsRule:
-#    Type: AWS::ElasticLoadBalancingV2::ListenerRule
-#    Properties:
-#      Actions:
-#        - Action
-#      Conditions:
-#        - RuleCondition
-#      ListenerArn: !Ref rListenerHttps
-#      Priority: 1
+  rListenerHttps443:
+    Type: AWS::ElasticLoadBalancingV2::Listener
+    Properties:
+      Certificates:
+        - { CertificateArn: !Ref pCertificateArn }
+      DefaultActions:
+        - TargetGroupArn: !Ref rTargetGroupHttp
+          Type: forward
+      LoadBalancerArn: !Ref rLoadBalancer
+      Port: 443
+      Protocol: HTTPS
 
 
 Outputs:

@@ -6,6 +6,8 @@ import time
 
 import boto3
 
+from .bootstrap import *
+
 import jwt
 from eth_account import Account
 from eth_account.messages import encode_defunct, SignableMessage
@@ -325,6 +327,10 @@ def mk_msg(msg_to_sign, sig):
 
 
 def test_establish_session_via_handler():
+    if get_env('VOTING_ALPHA_TEST_ENV', '') != "True":
+        log.error("set VOTING_ALPHA_TEST_ENV to 'True' to test.")
+        sys.exit(1)
+
     global LAST_GENERATED_OTP
 
     ctx = AttrDict(loop='loop')
@@ -339,9 +345,9 @@ def test_establish_session_via_handler():
         claimed=False
     ).save()
 
-    def test_email(email, expected_status: int, expected_error_msg: str):
+    def test_email(_email_addr, expected_status: int, expected_error_msg: str = None):
         msg = AttrDict(
-            payload={'email_addr': email_addr, 'address': acct.address},
+            payload={'email_addr': _email_addr, 'address': acct.address},
             request=RequestTypes.ESTABLISH_SESSION.value
         )
         msg_to_sign, full_msg, signed = encode_and_sign_msg(msg, acct)
@@ -353,6 +359,9 @@ def test_establish_session_via_handler():
         if not (r['statusCode'] == 200 and expected_status == 200):
             print(r)
             raise Exception(f"should have failed: expected: {(expected_status, expected_error_msg)}; got: {r}")
+
+    # maybe we should think about using this one day
+    # test_email('definitely_doesnt_exist', expected_status=444)
 
     for expect_suceed, email_addr in [(False, 'mAX-test@xk.io'), (True, test_email_addr)]:
         msg = AttrDict(

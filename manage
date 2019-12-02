@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from traceback import print_tb
 
+from click import Command, command
+
 logging.basicConfig(level=logging.INFO)
 
 try:
@@ -877,8 +879,8 @@ def get_evs(env_name, do_load=True):
     return evs
 
 
-def get_env_name(env_name):
-    return env_name if not env_name[:5] == ".env." else env_name[5:]
+def get_env_name(env_name: str):
+    return env_name if not env_name.startswith(".env.") else env_name[5:]
 
 
 @cli.command(name='watch-env')
@@ -1048,6 +1050,7 @@ script_info = {
         'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
         'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
         'function': '_load_members',
+        'click_f': 'load_members'
     },
     'setupMemberClasses': {
         'module': 'stack.app.members.api.scripts.setupMemberClasses',
@@ -1057,6 +1060,7 @@ script_info = {
             'PYTHONPATH': Path('stack/cr/chaincode').absolute().__str__()
         },
         'function': '_setup_member_classes',
+        'click_f': 'setup_member_classes',
         'args': [('oWeb3Provider', 'cfn'), ('oErc20BalanceProxyAddr', 'cfn')]
     },
     'sendCoins': {
@@ -1064,6 +1068,7 @@ script_info = {
         'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
         'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
         'function': '_send_coins',
+        'click_f': 'send_coins',
         'args': [('oWeb3Provider', 'cfn')]
     },
     'createBallots': {
@@ -1071,8 +1076,16 @@ script_info = {
         'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
         'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
         'function': '_create_ballots',
+        'click_f': 'create_ballots',
         'args': [('oWeb3Provider', 'cfn'), ('oIndexAddr', 'cfn'), ('oDemocHash', 'cfn')]
     },
+    'memberRegistrationStats': {
+        'module': 'stack.app.members.api.scripts.memberRegistrationStats',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_member_rego_stats',
+        'click_f': 'member_rego_stats'
+    }
 }
 
 
@@ -1083,8 +1096,9 @@ def script_needs_env(script, var_name):
 
 @click.group('script-env')
 @click.argument('env', default="dev")
-def scripts(env):
-    pass
+@click.pass_context
+def scripts(ctx, env):
+    ctx.obj = dict(env=env, evs=get_evs(env, do_load=False))
 
 
 cli.add_command(scripts)
@@ -1110,7 +1124,7 @@ cli.add_command(scripts)
 #     getattr(script_module, our_script['function'])("~/sv-test-members.csv")
 
 
-@click.group('run', invoke_without_command=True)
+@click.group('run2', invoke_without_command=True)
 @click.argument('script-name', type=click.Choice(list(script_info.keys())))
 @click.argument('args', nargs=-1)
 @click.option('--gen-args', default=False, is_flag=True)
@@ -1127,12 +1141,10 @@ def run_script(ctx, script_name, args, gen_args):
         raise Exception('cannot gen args for this')
 
     env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
-
-    if 'append_or_set_env' in our_script:
-        for (k, v) in our_script['append_or_set_env'].items():
-            env_vars_to_load[k] = ':'.join(filter(lambda v: v is not None, [v, os.environ.get('PYTHON_PATH', None)]))
-
     logging.info(env_vars_to_load)
+
+    for (k, v) in our_script.get('append_or_set_env', {}).items():
+        env_vars_to_load[k] = ':'.join(filter(lambda v: v is not None, [v, os.environ.get(k, None)]))
 
     for (k, v) in env_vars_to_load.items():
         os.environ[k] = v
@@ -1156,6 +1168,59 @@ def run_script(ctx, script_name, args, gen_args):
 
 
 scripts.add_command(run_script)
+
+
+@click.group('run')
+@click.pass_context
+def run_dynamic(ctx):
+    pass
+
+
+# prep import and remove a bunch-o-modules
+orig_modules = set(sys.modules.keys())
+
+for (script_name, script) in script_info.items():
+    if 'click_f' in script:
+        script_invoke_name = script['click_f'].lower().replace('_', '-')
+
+        _script_module = importlib.import_module(script['module'])
+        script_params = getattr(_script_module, script['click_f']).params
+        del _script_module
+
+        @click.command(name=script_invoke_name, context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
+        @click.pass_context
+        def new_cmd(ctx, **kwargs):
+            evs = ctx.obj['evs']
+
+            env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
+            logging.info(env_vars_to_load)
+
+            for (k, v) in script.get('append_or_set_env', {}).items():
+                env_vars_to_load[k] = ':'.join(
+                    filter(lambda v: v is not None, [v, os.environ.get(k, None)]))
+
+            for (k, v) in env_vars_to_load.items():
+                os.environ[k] = v
+
+            if script.get('remap_env', None):
+                for (oldName, newName) in script['remap_env']:
+                    os.environ[newName] = os.environ[oldName]
+
+            script_module = importlib.import_module(script['module']) # importlib.import_module(script['module'])
+            print('forwarding')
+            ctx.invoke(getattr(script_module, script['click_f']), **kwargs)
+
+        new_cmd.params = script_params
+        run_dynamic.add_command(new_cmd)
+
+# remove the modules we imported temporarily
+next_modules = set(sys.modules.keys())
+modules_diff = orig_modules ^ next_modules
+for _module in modules_diff:
+    del sys.modules[_module]
+importlib.invalidate_caches()
+
+scripts.add_command(run_dynamic)
 
 
 @cli.command(name='outputs-env')

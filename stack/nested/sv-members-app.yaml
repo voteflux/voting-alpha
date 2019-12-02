@@ -109,7 +109,7 @@ Resources:
           VOTING_ALPHA_TEST_ENV: !If [ cDev, "True", "False" ]
           pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
           pEthHost: !Ref pEthHost
-      Handler: api.message_handler
+      Handler: api.handlers.message_handler
       Runtime: python3.7
       Layers:
         - !Ref pLambdaLayer

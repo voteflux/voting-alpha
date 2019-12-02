@@ -1,6 +1,3 @@
-from attrdict import AttrDict
 from .bootstrap import *
-
-from .handlers import message_handler
-
+from attrdict import AttrDict
 env = AttrDict(os.environ)

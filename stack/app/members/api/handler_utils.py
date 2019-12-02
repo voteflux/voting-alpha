@@ -99,7 +99,6 @@ def ensure_session(f):
 
             # todo: more?
             return await f(event, ctx, *args, msg=msg, eth_address=address, jwt_claim=claim, session=session, **kwargs)
-
         try:
             return await inner2()
         except LambdaError as exception:
