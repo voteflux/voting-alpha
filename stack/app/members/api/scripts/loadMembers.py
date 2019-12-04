@@ -52,7 +52,8 @@ def _load_members(in_file, force_overwrite=False, really_save=False):
                 have_sent_otp=False,
             )
             if really_save:
-                VoterEnrolmentModel(**r).save()
+                raise Exception('saving not enabled - manually comment this line')
+                # VoterEnrolmentModel(**r).save()
                 print('WARNING: saved', email, r)
             else:
                 print(f'WARNING: would save but flag not provided: {r}')
