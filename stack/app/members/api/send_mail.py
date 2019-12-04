@@ -28,7 +28,8 @@ default_params = {
 
 def send_email(source=None, to_addrs=None, cc_addrs=None, bcc_addrs=None, subject=None, body_txt=None, body_html=None,
                reply_tos=None):
-    return ses.send_email(Source=source or default_params['source'], Destination={
+    log.info(f'Sending email to {to_addrs} with subject {subject}')
+    email_send_result = ses.send_email(Source=source or default_params['source'], Destination={
         'ToAddresses': to_addrs or [],
         'CcAddresses': cc_addrs or [],
         'BccAddresses': bcc_addrs or [],
@@ -39,6 +40,8 @@ def send_email(source=None, to_addrs=None, cc_addrs=None, bcc_addrs=None, subjec
             # 'Html': {'Data': body_html or body_txt}
         }
     }, ReplyToAddresses=reply_tos or [source or default_params['source']])
+    log.info(f'Sent email to {to_addrs} with result {email_send_result}')
+    return email_send_result
 
 
 def format_backup(backup: str) -> str:
