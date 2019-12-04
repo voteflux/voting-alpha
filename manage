@@ -1179,39 +1179,46 @@ def run_dynamic(ctx):
 # prep import and remove a bunch-o-modules
 orig_modules = set(sys.modules.keys())
 
+
+def gen_cmd(_script, _script_name, _script_params):
+    script_invoke_name = _script['click_f'].lower().replace('_', '-')
+
+    @click.command(name=script_invoke_name, context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
+    @click.pass_context
+    def new_cmd(ctx, **kwargs):
+        logging.info(f'Running dynamically loaded command: {script_invoke_name} with args: {ctx.args} {ctx.params}')
+        # logging.info(f'Script: {_script}')
+
+        evs = ctx.obj['evs']
+
+        env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(_script_name, k)}
+        logging.info(env_vars_to_load)
+
+        for (k, v) in script.get('append_or_set_env', {}).items():
+            env_vars_to_load[k] = ':'.join(
+                filter(lambda v: v is not None, [v, os.environ.get(k, None)]))
+
+        for (k, v) in env_vars_to_load.items():
+            os.environ[k] = v
+
+        if script.get('remap_env', None):
+            for (oldName, newName) in script['remap_env']:
+                os.environ[newName] = os.environ[oldName]
+
+        script_module = importlib.import_module(_script['module']) # importlib.import_module(script['module'])
+        ctx.invoke(getattr(script_module, _script['click_f']), **kwargs)
+
+    new_cmd.params = _script_params
+    return new_cmd
+
+
+dyn_modules = {}
 for (script_name, script) in script_info.items():
     if 'click_f' in script:
-        script_invoke_name = script['click_f'].lower().replace('_', '-')
-
-        _script_module = importlib.import_module(script['module'])
-        script_params = getattr(_script_module, script['click_f']).params
-        del _script_module
-
-        @click.command(name=script_invoke_name, context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
-        @click.pass_context
-        def new_cmd(ctx, **kwargs):
-            evs = ctx.obj['evs']
-
-            env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
-            logging.info(env_vars_to_load)
-
-            for (k, v) in script.get('append_or_set_env', {}).items():
-                env_vars_to_load[k] = ':'.join(
-                    filter(lambda v: v is not None, [v, os.environ.get(k, None)]))
-
-            for (k, v) in env_vars_to_load.items():
-                os.environ[k] = v
-
-            if script.get('remap_env', None):
-                for (oldName, newName) in script['remap_env']:
-                    os.environ[newName] = os.environ[oldName]
-
-            script_module = importlib.import_module(script['module']) # importlib.import_module(script['module'])
-            print('forwarding')
-            ctx.invoke(getattr(script_module, script['click_f']), **kwargs)
-
-        new_cmd.params = script_params
-        run_dynamic.add_command(new_cmd)
+        dyn_modules[script_name] = importlib.import_module(script['module'])
+        script_params = getattr(dyn_modules[script_name], script['click_f']).params
+        del dyn_modules[script_name]
+        run_dynamic.add_command(gen_cmd(script, script_name, script_params))
 
 # remove the modules we imported temporarily
 next_modules = set(sys.modules.keys())

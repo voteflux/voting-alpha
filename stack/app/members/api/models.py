@@ -177,6 +177,7 @@ class VoterEnrolmentModel(BaseModel):
     first_name = UnicodeAttribute()
     weightingMap = MapAttribute()
     claimed = BooleanAttribute()
+    have_sent_otp = BooleanAttribute(default=False)
 
 
 # FLUX STUFF BELOW, LEFT OVER FROM COPY-PASTE
