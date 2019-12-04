@@ -22,7 +22,7 @@ class StateTracker:
     def read_raw(self) -> StateTy:
         if not os.path.exists(self.db_file):
             with open(self.db_file, 'w') as f:
-                f.write('')
+                f.write('{}')
         with open(self.db_file, 'r') as f:
             return AttrDict(yaml.safe_load(f))
 
