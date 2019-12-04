@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from traceback import print_tb
 
-from click import Command, command
+from click import Command, command, Option
 
 logging.basicConfig(level=logging.INFO)
 
@@ -1127,6 +1127,22 @@ script_info = {
         'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
         'function': '_member_rego_stats',
         'click_f': 'member_rego_stats'
+    },
+    'setMemberVotingWeight': {
+        'module': 'stack.app.members.api.scripts.memberVotingWeight',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_set_member_voting_weight',
+        'click_f': 'set_member_voting_weight',
+        'args': [('http_provider', 'oWeb3Provider', 'cfn')]
+    },
+    'getMemberVotingWeight': {
+        'module': 'stack.app.members.api.scripts.memberVotingWeight',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_get_member_voting_weight',
+        'click_f': 'get_member_voting_weight',
+        'args': [('http_provider', 'oWeb3Provider', 'cfn')]
     }
 }
 
@@ -1172,9 +1188,6 @@ cli.add_command(scripts)
 @click.option('--gen-args', default=False, is_flag=True)
 @click.pass_context
 def run_script(ctx, script_name, args, gen_args):
-    # if gen_args and len(args) > 0:
-    #     raise Exception("can't specify both --gen-args and provide args")
-
     env_name = get_env_name(ctx.parent.params['env'])
     evs = get_evs(env_name, do_load=False)
     our_script = script_info[script_name]
@@ -1213,9 +1226,11 @@ scripts.add_command(run_script)
 
 
 @click.group('run')
+@click.option('--gen-args', is_flag=True, default=False)
 @click.pass_context
-def run_dynamic(ctx):
-    pass
+def run_dynamic(ctx, gen_args):
+    ctx.obj['gen_args'] = gen_args
+    evs = ctx.obj['evs']
 
 
 # prep import and remove a bunch-o-modules
@@ -1232,6 +1247,18 @@ def gen_cmd(_script, _script_name, _script_params):
         # logging.info(f'Script: {_script}')
 
         evs = ctx.obj['evs']
+        gen_args = ctx.obj['gen_args']
+        generated_opts = {}
+        if gen_args:
+            stack_ds = cfn_outputs_to_dict(get_stack_details(evs.STACK_NAME)['Outputs'])
+            for (opt_name, output_name, source) in _script['args']:
+                if source == 'cfn':
+                    generated_opts[opt_name] = stack_ds[output_name]
+                    print(f"checking {opt_name} in {ctx.params} {ctx.args}")
+                    if any(filter(lambda p: p == opt_name and ctx.params[p] is None, ctx.params)):
+                        ctx.params[opt_name] = generated_opts[opt_name]
+                else:
+                    raise Exception('no other sources of args supported')
 
         env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(_script_name, k)}
         logging.info(env_vars_to_load)
@@ -1247,10 +1274,24 @@ def gen_cmd(_script, _script_name, _script_params):
             for (oldName, newName) in script['remap_env']:
                 os.environ[newName] = os.environ[oldName]
 
+        # ctx.params
+
+        logging.info(f'Running dynamically loaded command: {script_invoke_name} with args: {ctx.args} {ctx.params}')
+
+        kwargs.update(generated_opts)
+
         script_module = importlib.import_module(_script['module']) # importlib.import_module(script['module'])
         ctx.invoke(getattr(script_module, _script['click_f']), **kwargs)
 
-    new_cmd.params = _script_params
+    generatable_opts = list([a[0] for a in _script.get('args', [])])
+    print(generatable_opts)
+
+    def mod_p(p):
+        if p.name in generatable_opts:
+            p.required = False
+        return p
+
+    new_cmd.params = list([mod_p(p) for p in _script_params])
     return new_cmd
 
 

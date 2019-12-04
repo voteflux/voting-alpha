@@ -38,6 +38,7 @@ def _load_members(in_file, force_overwrite=False, really_save=False):
     count = 0
     seen = set()
     dup = []
+    would_save = []
     for rowN, line in enumerate(reader):
         email = line['email'].strip().lower()
         fname = line['first_name'].strip()
@@ -56,6 +57,7 @@ def _load_members(in_file, force_overwrite=False, really_save=False):
                 # VoterEnrolmentModel(**r).save()
                 print('WARNING: saved', email, r)
             else:
+                would_save += [r]
                 print(f'WARNING: would save but flag not provided: {r}')
         else:
             print(f'EXISTS:{email}')
@@ -74,7 +76,8 @@ def _load_members(in_file, force_overwrite=False, really_save=False):
     print({
         'count': count,
         'seen': len(seen),
-        'dup': dup
+        'dup': dup,
+        'would_save': would_save
     })
 
 
