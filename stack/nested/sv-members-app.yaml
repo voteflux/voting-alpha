@@ -41,6 +41,8 @@ Parameters:
   pVoterGroupToAddressMapJson:
     Type: String
 
+  pMemberEmailDeliveryNotificationEmail:
+    Type: String
     
 
 Conditions:
@@ -172,6 +174,23 @@ Resources:
       DomainName: !Ref pApiDomain
       Stage: !Ref pApiStageName
       RestApiId: !Ref rMembersOnboardApi
+
+  rMemberEmailDeliverySNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${pNamePrefix}-member-email-deliveries
+      Subscription:
+        - Endpoint: !Ref pMemberEmailDeliveryNotificationEmail
+          Protocol: email
+        - Endpoint: !GetAtt rMemberEmailDeliverySQS.Arn
+          Protocol: sqs
+      TopicName: !Sub ${pNamePrefix}-member-email-deliveries
+
+  rMemberEmailDeliverySQS:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod:  1209600  # 14 days, the maximum
+      QueueName: !Sub ${pNamePrefix}-member-email-deliveries
 
 
 Outputs:

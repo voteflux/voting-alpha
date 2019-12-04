@@ -858,7 +858,8 @@ def default_params_from_env(env_name, evs):
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
         'pCreateAlb': 'true',
-        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name])
+        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name]),
+        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL')
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }

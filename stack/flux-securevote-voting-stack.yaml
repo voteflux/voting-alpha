@@ -204,7 +204,10 @@ Parameters:
 
   pVoterGroupToAddressMapJson:
     Type: String
-    Default: "{}"
+    Description: "A JSON serialized map of names of groups to the relevant smart contracts. For none, use the empty JSON object: {}"
+
+  pMemberEmailDeliveryNotificationEmail:
+    Type: String
 
 
 Conditions:
@@ -703,6 +706,7 @@ Resources:
         pLambdaLayer: !Ref rLambdaLayer
         pAdminEmail: !Ref AdminEmail
         pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
+        pMemberEmailDeliveryNotificationEmail: !Ref pMemberEmailDeliveryNotificationEmail
         pEnv: !Ref EnvironmentName
 
 
