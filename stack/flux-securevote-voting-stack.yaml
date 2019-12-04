@@ -209,6 +209,8 @@ Parameters:
   pMemberEmailDeliveryNotificationEmail:
     Type: String
 
+  pHashSalt:
+    Type: String
 
 Conditions:
   cHasSSHKey:
@@ -707,7 +709,15 @@ Resources:
         pAdminEmail: !Ref AdminEmail
         pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
         pMemberEmailDeliveryNotificationEmail: !Ref pMemberEmailDeliveryNotificationEmail
+        pHashSalt: !Ref pHashSalt
         pEnv: !Ref EnvironmentName
+#        pSesConfigurationSetName: !Ref rMemberEmailConfigurationSet
+
+# Template format error: Unrecognized resource types: [AWS::SES::ConfigurationSet]
+#  rMemberEmailConfigurationSet:
+#    Type: AWS::SES::ConfigurationSet
+#    Properties:
+#      Name: !Sub ${NamePrefix}-member-email-deliveries
 
 
   rPublicLoadBalancer:

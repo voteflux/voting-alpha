@@ -118,6 +118,11 @@ def print_output(msg):
     print("\n### RESULT ###\n\n{}".format(msg))
 
 
+#
+# CFN STACKS
+#
+
+
 def get_stack(stack_name):
     ss = list(filter(lambda s: s['StackName'] == stack_name, cfn.list_stacks()['StackSummaries']))
     if len(ss) > 0:
@@ -495,12 +500,33 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
         sys.stderr.write(f"Error in stream events: {_e}, {repr(_e)}")
 
 
-def s3_upload(filepath, obj_key, public_read=True):
-    s3 = boto3.client('s3')
-    s3_tfer = S3Transfer(s3)
+cached_s3 = None
+
+
+def get_s3_and_tfer():
+    global cached_s3
+    if cached_s3 is None:
+        cached_s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(cached_s3)
+    return cached_s3, s3_tfer
+
+
+def s3_upload(obj_key, public_read=True, bucket_name=S3_DEV_BUCKET, filepath: str = None, binary_data: bytes = None):
+    s3, s3_tfer = get_s3_and_tfer()
     extra_args = {'ACL': 'public-read'} if public_read else {}
-    s3_tfer.upload_file(filepath, S3_DEV_BUCKET, obj_key, extra_args=extra_args)
-    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+    if filepath and binary_data:
+        raise Exception('cannot upload both a file and raw bytes - pick one')
+    if filepath:
+        s3_tfer.upload_file(filepath, bucket_name, obj_key, extra_args=extra_args)
+    elif binary_data:
+        s3.put_object(
+            Body=binary_data,
+            Bucket=bucket_name,
+            ContentMD5=hashlib.md5(binary_data).hexdigest(),
+            Key=obj_key,
+            **({'ACL': 'public-read'} if public_read else {})
+        )
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, bucket_name, obj_key)
     return obj_url
 
 
@@ -631,7 +657,7 @@ def upload_func(func_path, func_name):
     with open('./tmp-func.zip', 'rb') as f:
         zip_bytes = f.read()
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
-    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+    # obj_url = s3_upload(obj_key, filepath=hashlib.sha256(zip_bytes).hexdigest() + ".zip")
 
     awslam = boto3.client('lambda')
     awslam.update_function_code(FunctionName=func_name, ZipFile=zip_bytes, Publish=True)
@@ -651,7 +677,7 @@ def deploy_nestedstack(stack_path, stack_name, params):
 
     filename = os.path.basename(stack_path)
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
-    obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
+    obj_url = s3_upload(obj_key, filepath=TMP_TMPL_FILE)
 
     if not params:
         prev_params = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]['Parameters']
@@ -741,6 +767,9 @@ def _step_to_parameters(step: int):
 @click.pass_context
 def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
                 use_last_uploaded, step):
+
+    raise Exception('deprecated')
+
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -859,7 +888,8 @@ def default_params_from_env(env_name, evs):
         'pDeployMacros': 'false',
         'pCreateAlb': 'true',
         'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name]),
-        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL')
+        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL'),
+        'pHashSalt': evs.get('PRIV_FAILING_EMAIL_SALT', os.urandom(10).hex()),
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
@@ -874,10 +904,13 @@ def gen_packaged_stack_tmp_filename(env_name):
 
 def get_evs(env_name, do_load=True):
     env_file = f'.env.{env_name}'
-    if do_load:
-        load_dotenv(env_file, override=True)
-    evs = AttrDict(dotenv_values(env_file))
-    return evs
+    if os.path.exists(env_file):
+        if do_load:
+            load_dotenv(env_file, override=True)
+        evs = AttrDict(dotenv_values(env_file))
+        priv_evs = get_evs(f'{env_name}.priv', do_load=do_load)
+        return AttrDict(**evs, **priv_evs)
+    return AttrDict()
 
 
 def get_env_name(env_name: str):
@@ -919,8 +952,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
 
     tmp_template_filename = gen_packaged_stack_tmp_filename(env_name)
     obj_key = f"templates/{env_name}" + os.path.split(evs.STACK_TEMPLATE)[-1]
-    s3 = boto3.client('s3')
-    s3_tfer = S3Transfer(s3)
+    s3, s3_tfer = get_s3_and_tfer()
 
     if not use_last_uploaded:
         must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
@@ -1008,7 +1040,9 @@ def package_lambda(resource_name: str, lambda_path: str, layers: List[Path]):
 @click.argument('env-name', type=click.STRING, default='dev')
 @click.argument('resource-name')
 @click.argument('nested', nargs=-1)
-def upload_func(env_name, resource_name, nested):
+@click.option('--upload-layers', is_flag=True, default=False)
+def sync_lambda(env_name, resource_name, nested, upload_layers=False):
+    raise Exception("not working atm")
     env_name = get_env_name(env_name)
     evs = get_evs(env_name)
     root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
@@ -1017,9 +1051,13 @@ def upload_func(env_name, resource_name, nested):
     for ns_logical_name in nested:
         (last_path, last_name, last_stack) = tmpls[-1]
         ns_resource = last_stack['Resources'][ns_logical_name]
-        ns_path = last_path / Path(ns_resource['Properties']['TemplateURL'])
+        path_key = ({
+            "AWS::Serverless::Application": "Location",
+            "AWS::CloudFormation::Stack": "TemplateURL"
+        })[ns_resource['Type']]
+        ns_path = last_path / Path(ns_resource['Properties'][path_key])
         ns_stack_name = get_stack_resource(last_name, ns_logical_name)['PhysicalResourceId'].split('/')[-2]
-        tmpls.append((ns_path.parent, ns_stack_name, cfn_tools.load_yaml(ns_path)))
+        tmpls.append((ns_path.parent, ns_stack_name, cfn_tools.load_yaml(ns_path.read_text())))
 
     final_tmpl_dir, final_stack_name, final_tmpl = tmpls[-1]
     lambda_func_name = get_stack_resource(final_stack_name, resource_name)['PhysicalResourceId']
@@ -1030,16 +1068,19 @@ def upload_func(env_name, resource_name, nested):
 
     print(lambda_path, lambda_code_uri, lambda_res)
 
-    layers = [] if 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
+    layers = [] if not upload_layers or 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
     tmp_zip = package_lambda(resource_name, lambda_path, layers)
 
     with open(f'./{tmp_zip}', 'rb') as f:
         zip_bytes = f.read()
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
-    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+    # obj_url = s3_upload(obj_key, filepath=hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+
+    obj_key = f'sync-lambda{resource_name}.zip'
+    zip_url = s3_upload(obj_key=obj_key, bucket_name=S3_DEV_BUCKET, binary_data=zip_bytes)
 
     awslam = boto3.client('lambda')
-    resp = awslam.update_function_code(FunctionName=lambda_func_name, ZipFile=zip_bytes,
+    resp = awslam.update_function_code(FunctionName=lambda_func_name, S3Key=obj_key,
                                        S3Bucket=evs.S3_CFN_SUPPORT_BUCKET, Publish=True)
 
     print_output(f"Updated function {lambda_func_name}. Resp: {resp}")
