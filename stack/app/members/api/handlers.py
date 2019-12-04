@@ -31,9 +31,7 @@ from .env import get_env
 log = mk_logger('members-onboard')
 LAST_GENERATED_OTP = None
 
-
 ssm = boto3.client('ssm')
-
 
 # 8am Monday 25th
 starting_timestamp = 1574629200
@@ -64,7 +62,8 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
 
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
-    verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
+    verify(eth_address == msg.payload.address,
+           f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
 
     voter_enrolled_m = VoterEnrolmentModel.get_maybe(msg.payload.email_addr)
@@ -131,6 +130,8 @@ Example payload:
 }
 
 """
+
+
 async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
     verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
@@ -174,6 +175,8 @@ Example payload:
   'sig': '0x7faf86494a9c882be60105c16f0e701043797481831762646709b87301e5130e13568d1c36ac85b9976545c23fdaba135f68c7fefa275a41b30c51ee66456eda1c'
 }
 '''
+
+
 async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
     verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
@@ -218,12 +221,19 @@ def get_ssm_param(name, decode_json=False, with_decryption=False):
     return value
 
 
-MEMBERSHIP_C_ABI = [{"constant":False,"inputs":[{"name":"votingAddr","type":"address"},{"name":"weight","type":"uint32"},{"name":"startTime","type":"uint48"},{"name":"endTime","type":"uint48"}],"name":"setMember","outputs":[],"payable":False,"stateMutability":"nonpayable","type":"function"}]
-GET_BALANCE_ABI = [{"constant":True,"inputs":[{"name":"v","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"payable":False,"stateMutability":"view","type":"function"}]
+MEMBERSHIP_C_ABI = [{"constant": False,
+                     "inputs": [{"name": "votingAddr", "type": "address"}, {"name": "weight", "type": "uint32"},
+                                {"name": "startTime", "type": "uint48"}, {"name": "endTime", "type": "uint48"}],
+                     "name": "setMember", "outputs": [], "payable": False, "stateMutability": "nonpayable",
+                     "type": "function"}]
+GET_BALANCE_ABI = [{"constant": True, "inputs": [{"name": "v", "type": "address"}], "name": "balanceOf",
+                    "outputs": [{"name": "", "type": "uint256"}], "payable": False, "stateMutability": "view",
+                    "type": "function"}]
 
 
 def lookup_group_contract(group):
-    log.info(f"Env value for pVoterGroupToAddressMapJson: {get_env('pVoterGroupToAddressMapJson')} || {repr(get_env('pVoterGroupToAddressMapJson'))}")
+    log.info(
+        f"Env value for pVoterGroupToAddressMapJson: {get_env('pVoterGroupToAddressMapJson')} || {repr(get_env('pVoterGroupToAddressMapJson'))}")
     log.info(f"Group provided: {group}, {repr(group)}, {type(group)}")
     group_map = json.loads(get_env('pVoterGroupToAddressMapJson'))
     log.info(f"Result of json.loads: {type(group_map)} {group_map}")
@@ -236,7 +246,8 @@ def mk_weighting_allocation(w3, my_addr, to_addr, group, weight):
     log.info(f'mk_weighting_allocation: {w3}, {repr(my_addr)}, {repr(to_addr)}, {repr(group)}, {repr(weight)}')
     membership_addr = lookup_group_contract(group)
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_C_ABI)
-    tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction({'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
+    tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction(
+        {'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
     return tx
 
 
@@ -271,7 +282,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
         log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
     except Exception as e:
         log.error(f'got exception during finalization setup: {e}')
-        raise LambdaError(500, msg=f"Unexpected error: {e}", client_response="Unexpected error occured. Please try again.")
+        raise LambdaError(500, msg=f"Unexpected error: {e}",
+                          client_response="Unexpected error occured. Please try again.")
 
     # main
     try:
@@ -324,7 +336,8 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
 
 async def test_establish_session():
     addr = '0x1234'
-    r = await establish_session('', '', AttrDict(payload={'email_addr': 'max-test@xk.io', 'address': addr}), addr, AttrDict(token='asdf'))
+    r = await establish_session('', '', AttrDict(payload={'email_addr': 'max-test@xk.io', 'address': addr}), addr,
+                                AttrDict(token='asdf'))
     print(r)
 
 
