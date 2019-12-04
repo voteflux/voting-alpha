@@ -104,6 +104,9 @@ Your OTP is:
             SessionModel.otp.emails_sent_at.set(SessionModel.otp.emails_sent_at.prepend([TimestampMap()])),
             SessionModel.state.set(SessionState.s010_SENT_OTP_EMAIL)
         ])
+        voter_enrolled.update([
+            VoterEnrolmentModel.have_sent_otp.set(True)
+        ])
         log.info(f'Successfully sent OTP to {msg.payload.email_addr}')
         return {'result': 'success', 'jwt': jwt_token}
 
