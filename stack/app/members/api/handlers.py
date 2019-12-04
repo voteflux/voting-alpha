@@ -38,8 +38,8 @@ ssm = boto3.client('ssm')
 # 8am Monday 25th
 starting_timestamp = 1574629200
 
-# 7:30am Wednesday 4th December 2019 ADST
-ending_timestamp = 1575405000
+ending_timestamp = 1575515100
+ending_time_human = "Thursday December 5th, 2:05pm"
 
 
 @post_common
@@ -61,7 +61,7 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
 
     # check times first
     verify(time.time() >= starting_timestamp, 'early rego attempt', 'Cannot register voters before 8am Monday 25th.')
-    # verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
+    verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
 
     verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address, f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
@@ -128,6 +128,7 @@ Example payload:
 
 """
 async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
     verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
     verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -170,6 +171,7 @@ Example payload:
 }
 '''
 async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
+    verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
     verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
     verify(session.state == SessionState.s020_CONFIRMED_OTP, 'expected state')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -247,7 +249,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
     verify(voter_enrolled_m != Nothing, 'member does not exist in db', 'Email not found.')
     voter_enrolled = voter_enrolled_m.getValue()
     verify(voter_enrolled.claimed is False, 'member claimed vote already', 'Voting rights already claimed.')
-    verify(time.time() <= ending_timestamp, 'late rego attempt', 'Cannot register voters after 10.45am Monday 25th.')
+    verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
 
     finished_web3 = False
 
