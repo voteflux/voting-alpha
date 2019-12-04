@@ -118,6 +118,15 @@ Resources:
           Type: calltx
           Function: $sv-index.dSetCommunityBallotsEnabled
           Inputs: [ $democ-hash, 'bool:false' ]
+        - Name: premium
+          Type: calltx
+          Function: $sv-index.dUpgradeToPremium
+          Inputs: [ $democ-hash ]
+        - Name: pay-for-democ
+          Function: $sv-payments.payForDemocracy
+          Type: calltx
+          Inputs: [ $democ-hash ]
+          Value: 1200000000000000000000
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
