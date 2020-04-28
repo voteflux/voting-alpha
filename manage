@@ -1143,6 +1143,14 @@ script_info = {
         'function': '_get_member_voting_weight',
         'click_f': 'get_member_voting_weight',
         'args': [('http_provider', 'oWeb3Provider', 'cfn')]
+    },
+    'makeSomeTxs': {
+        'module': 'stack.app.members.api.scripts.makeSomeTxs',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': 'make_some_txs',
+        'click_f': 'make_some_txs',
+        'args': [('http_provider', 'oWeb3Provider', 'cfn')]
     }
 }
 

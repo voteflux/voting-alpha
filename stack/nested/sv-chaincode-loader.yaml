@@ -114,6 +114,10 @@ Resources:
           Type: calltx
           Function: $sv-payments.giveTimeToDemoc
           Inputs: [ $democ-hash, 'uint256:3153600000', 'bytes32:0x0000000000000000000000000000000000000000000000000000000000000000' ]
+        - Name: set-basic-price-low
+          Type: calltx
+          Function: $sv-payments.setBasicCentsPricePer30Days
+          Inputs: [ 'uint256:1' ]
         - Name: disable-comm-ballots
           Type: calltx
           Function: $sv-index.dSetCommunityBallotsEnabled
