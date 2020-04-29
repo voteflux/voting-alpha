@@ -10,6 +10,7 @@ import shutil
 import sys, os, json, logging, subprocess
 import time
 import urllib.parse
+import io
 from datetime import datetime, timezone
 from pathlib import Path
 from traceback import print_tb
@@ -17,12 +18,13 @@ from traceback import print_tb
 from click import Command, command
 
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 try:
     from _manager_lib import *
 except ModuleNotFoundError as e:
-    logging.error(f"Exception importing _manager_lib: ModuleNotFoundError: {e}")
-    logging.error("Try running `pip install -r _manager_lib/requirements.txt`")
+    logger.error(f"Exception importing _manager_lib: ModuleNotFoundError: {e}")
+    logger.error("Try running `pip install -r _manager_lib/requirements.txt`")
     sys.exit(1)
 
 tracker = StateTracker()
@@ -50,7 +52,7 @@ import click
 def get_env(name, default):
     return os.environ.get(name, default)
 
-S3_DEV_BUCKET = get_env("S3_DEV_BUCKET", "flux-public-assets")
+S3_DEV_BUCKET = get_env("S3_DEV_BUCKET", get_env("S3_CFN_SUPPORT_BUCKET", "flux-voting-app-dev-public-assets"))
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
 
 TEST_STACK_NAME = "sv-testnet-stack"
@@ -80,12 +82,13 @@ def echo(*args, sep: str = " ", **kwargs):
 
 
 def must_run(cmd, silent=False):
-    logging.info("Running `%s`" % cmd)
-    out = subprocess.STDOUT
-    err = None
+    logger.info("Running `%s`" % cmd)
+    out = subprocess.PIPE
+    err = subprocess.STDOUT
     if silent:
-        out = subprocess.DEVNULL
-        err = out
+        # disable silent for now
+        out = subprocess.PIPE # open('tmp-cmd-stdout', 'w')
+        err = subprocess.STDOUT # open('tmp-cmd-stderr', 'w')
     if type(cmd) is list:
         to_run = cmd
     elif type(cmd) is str:
@@ -93,9 +96,16 @@ def must_run(cmd, silent=False):
     else:
         raise Exception("must_run only accepts str or list")
     exit_code = subprocess.check_call(to_run, stdout=out, stderr=err)
-    logging.debug("Command `%s` exited w code %d" % (cmd, exit_code))
+    logger.debug("Command `%s` exited w code %d" % (cmd, exit_code))
     if exit_code != 0:
-        logging.error("Failed to run %s" % cmd)
+        logger.error("Failed to run %s" % cmd)
+        logger.error(f"\nstdout:\n{out.readall()}")
+        logger.error(f"\n\nstderr:\n{err.readall()}")
+        try:
+            out.close()
+            err.close()
+        except:
+            pass
         raise Exception("Failed to run required cmd: %s" % cmd)
 
 
@@ -110,7 +120,7 @@ class CmdRunner:
     def run(self, cmd_runner=None):
         cmd_runner = self.cmd_runner if cmd_runner is None else cmd_runner
         for (n, cmd) in self.cmds:
-            logging.info("Running ({name}) as cmd:\n\t{cmd}\n".format(name=n, cmd=cmd))
+            logger.info("Running ({name}) as cmd:\n\t{cmd}\n".format(name=n, cmd=cmd))
             cmd_runner(cmd)
 
 
@@ -151,9 +161,9 @@ def stack_failed(stack_name):
 
 def await_in_prog(stack_name, heading_prefix="AWAITING", fullscreen=True):
     if is_in_prog(stack_name):
-        logging.info("Waiting for CFN deploy to complete before we trigger another.")
+        logger.info("Waiting for CFN deploy to complete before we trigger another.")
         stream_cfn_events(stack_name, heading_prefix=heading_prefix, fullscreen=fullscreen)
-        logging.info("Previous deploy completed, performing deploy...")
+        logger.info("Previous deploy completed, performing deploy...")
 
 
 def delete_stack(stack_name):
@@ -165,7 +175,7 @@ def delete_stack(stack_name):
 
 def stack_del_if_necessary(stack_name):
     if stack_exists(stack_name) and get_stack(stack_name)['StackStatus'] == 'ROLLBACK_COMPLETE':
-        logging.warning("Deleting {} as it's in ROLLBACK_COMPLETE".format(stack_name))
+        logger.warning("Deleting {} as it's in ROLLBACK_COMPLETE".format(stack_name))
         delete_stack(stack_name)
 
 
@@ -206,7 +216,7 @@ def get_failed_msgs(stack_name):
     try:
         evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
     except:
-        logging.warning("***** Failed to get stack events! *****")
+        logger.warning("***** Failed to get stack events! *****")
         return []
     evts_notable = list(
         filter(lambda evt:
@@ -353,7 +363,6 @@ def fmt_r(r, _r):
 def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscreen=True):
     # echo(json.dumps(_cfn_stack_extract_resources_status(stack_name, recursive=True), indent=2))
     # return
-    import curses
 
     _e = None
 
@@ -361,9 +370,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
 
     def clear_term():
         if fullscreen:
-            print(term.clear())
-
-    clear_term()
+            print(term.home + term.clear)
 
     def _run():
         nonlocal _e
@@ -474,7 +481,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
             addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
             time.sleep(1.5)
         except Exception as e:
-            logging.error(f"Error in CFN stream: {e}, {repr(e)}")
+            logger.error(f"Error in CFN stream: {e}, {repr(e)}")
             sys.stderr.write(f"Error in CFN stream: {e}, {repr(e)}\n")
             print_tb(e.__traceback__)
             with open('__tmp_manage_log', 'a') as f:
@@ -486,7 +493,7 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
     if fullscreen:
         with term.fullscreen():
             _run()
-        clear_term()
+        # clear_term()
     else:
         _run()
 
@@ -535,12 +542,14 @@ def docker_lambda(cmd, extra_args=''):
 def cli(debug, offset, region):
     global cfn
     if debug:
-        logging.basicConfig(level=logging.DEBUG)
-        logging.debug("Debug mode enabled")
+        logger.setLevel(level=logging.DEBUG)
+        logger.debug("Debug mode enabled")
     if offset:
         set_offset(offset)
     cfn_extras = {} if region == '' else {'region_name': region}
     cfn = boto3.client('cloudformation', **cfn_extras)
+    s3 = boto3.client('s3', **cfn_extras)
+
 
 
 py_targets_raw = ["cr", "members"]
@@ -619,7 +628,7 @@ def cmd_stream_cfn(stack_name):
 @click.argument('func-name')
 def upload_func(func_path, func_name):
     if func_path[-3:] != ".py":
-        logging.error("Must target a python file to upload (whole dir gets uploaded tho)")
+        logger.error("Must target a python file to upload (whole dir gets uploaded tho)")
         sys.exit(1)
     root_dir = os.path.dirname(os.path.realpath(__file__))
     dir_path = os.path.dirname(func_path)
@@ -664,7 +673,7 @@ def deploy_nestedstack(stack_path, stack_name, params):
         else:
             cfn_params = dict_to_cfn_params(json_params if params else {'pOffset': OFFSET})
     sid = create_or_update_stack(stack_name, obj_url, cfn_params)
-    logging.info(f"Stack SID: {sid}")
+    logger.info(f"Stack SID: {sid}")
 
     stream_cfn_events(stack_name, heading_prefix="DEPLOY-NS-DEV")
     print_output(f"Stack deploy/create/update run for {stack_name} w sid: {sid}")
@@ -697,6 +706,7 @@ def deploy_macros(stack_name):
         sid = create_stack(stack_name, obj_url, params_aws)
 
     stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+    print_output(f"Deploy succeeded!")
 
 
 @cli.command(name='destroy')
@@ -851,7 +861,7 @@ def default_params_from_env(env_name, evs):
         'NamePrefix': evs.NAME_PREFIX,
         'EnvironmentName': env_name,
         'HostedZoneDomain': evs.DOMAIN,
-        'EC2InstanceType': 't2.small' if env_name != 'prod' else 't3.medium',
+        'EC2InstanceType': 't3.nano' if env_name != 'prod' else 't3.small',
         'NumberOfEthereumConsensusNodes': '2',
         'NumberOfEthereumPublicNodes': '2',
         'Subdomain': evs.SUBDOMAIN,
@@ -920,6 +930,17 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     obj_key = f"templates/{env_name}" + os.path.split(evs.STACK_TEMPLATE)[-1]
     s3 = boto3.client('s3')
     s3_tfer = S3Transfer(s3)
+
+    try:
+        s3.get_bucket_acl(Bucket=evs.S3_CFN_SUPPORT_BUCKET)
+        logger.debug(f"Getting ACL of bucket ({evs.S3_CFN_SUPPORT_BUCKET}) succeeded. Continuing.")
+    except Exception as e:
+        logger.debug(f"Getting bucket ({evs.S3_CFN_SUPPORT_BUCKET}) ACL failed: {e}. Trying to create bucket.")
+        try:
+            s3.create_bucket(Bucket=evs.S3_CFN_SUPPORT_BUCKET, CreateBucketConfiguration={'LocationConstraint': evs.AWS_DEFAULT_REGION})
+            logging.debug(f"Created bucket {evs.S3_CFN_SUPPORT_BUCKET}")
+        except Exception as e:
+            logger.debug(f"Creation of bucket ({evs.S3_CFN_SUPPORT_BUCKET}) failed: {e}")
 
     if not use_last_uploaded:
         must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
@@ -1141,7 +1162,7 @@ def run_script(ctx, script_name, args, gen_args):
         raise Exception('cannot gen args for this')
 
     env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(script_name, k)}
-    logging.info(env_vars_to_load)
+    logger.info(env_vars_to_load)
 
     for (k, v) in our_script.get('append_or_set_env', {}).items():
         env_vars_to_load[k] = ':'.join(filter(lambda v: v is not None, [v, os.environ.get(k, None)]))
@@ -1186,13 +1207,13 @@ def gen_cmd(_script, _script_name, _script_params):
     @click.command(name=script_invoke_name, context_settings=dict(allow_extra_args=True, ignore_unknown_options=True))
     @click.pass_context
     def new_cmd(ctx, **kwargs):
-        logging.info(f'Running dynamically loaded command: {script_invoke_name} with args: {ctx.args} {ctx.params}')
-        # logging.info(f'Script: {_script}')
+        logger.info(f'Running dynamically loaded command: {script_invoke_name} with args: {ctx.args} {ctx.params}')
+        # logger.info(f'Script: {_script}')
 
         evs = ctx.obj['evs']
 
         env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(_script_name, k)}
-        logging.info(env_vars_to_load)
+        logger.info(env_vars_to_load)
 
         for (k, v) in script.get('append_or_set_env', {}).items():
             env_vars_to_load[k] = ':'.join(

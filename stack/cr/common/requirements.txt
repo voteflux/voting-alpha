@@ -1,8 +1,8 @@
-eth-account
 bitcoin==1.1.39
-web3[tester]
+web3
 setuptools
 toml
 tabulate
-eth-account
+eth-account==0.4.0
 ecdsa
+requests==2.22.0

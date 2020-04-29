@@ -6,7 +6,7 @@ aws-sam-cli==0.31.1
 aws-sam-translator==1.15.1
 awscli==1.16.283
 binaryornot==0.4.4
-blessed==1.16.1
+blessed==1.17.4
 boto3==1.10.19
 botocore==1.13.19
 certifi==2019.9.11
@@ -39,6 +39,8 @@ prompt-toolkit==1.0.14
 pyasn1==0.4.8
 Pygments==2.4.2
 PyInquirer==1.0.3
+pymonad==1.3
+pynamodb==4.3.1
 pyrsistent==0.15.5
 python-dateutil==2.8.0
 python-dotenv==0.10.3

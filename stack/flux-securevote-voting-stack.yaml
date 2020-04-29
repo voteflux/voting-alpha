@@ -129,6 +129,8 @@ Parameters:
     Type: String
     Default: t3.micro
     AllowedValues:
+      - t2.nano
+      - t3.nano
       - t2.micro
       - t3.micro
       - t2.small
@@ -536,12 +538,20 @@ Resources:
 #      CidrBlock: 10.13.37.0/20  # should be 10.13.32.0 -> 10.13.47.255
 #      EnableDnsSupport: true
 #      EnableDnsHostnames: true
-#
-#  rSubnet1:  # todo: more than 1 subnet / availability zone
+
+#  rSubnet1:
 #    Type: AWS::EC2::Subnet
 #    Properties:
 #      AvailabilityZone: !Sub ${AWS::Region}a
 #      CidrBlock: 10.13.37.0/24
+#      MapPublicIpOnLaunch: true
+#      VpcId: !Ref rVpc
+
+#  rSubnet2:
+#    Type: AWS::EC2::Subnet
+#    Properties:
+#      AvailabilityZone: !Sub ${AWS::Region}b
+#      CidrBlock: 10.13.38.0/24
 #      MapPublicIpOnLaunch: true
 #      VpcId: !Ref rVpc
 
@@ -717,6 +727,7 @@ Resources:
         pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
         pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
+        pVpcId: unknown
 
   rAlbDomain:
     Type: AWS::Route53::RecordSet

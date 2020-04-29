@@ -38,16 +38,29 @@ run `./manage --help` for cli commands, or `./manage CMD --help`
 
 ### Env Vars
 
-See `.in.sample`. (zsh-autoenv will automatically source `.in` and `.out` files for you)
+For each env edit the vars in .env.(name) -- e.g. `.env.dev`
+
+Additionally copy `.in.sample` to `.in` and update the vars; source `.in` if you need. (zsh-autoenv will automatically source `.in` and `.out` files for you)
 
 * S3_DEV_BUCKET=<a public bucket>
 * TEST_SUBDOMAIN=<just the subdomain>
 * VOTING_DOMAIN=<the domain hosted zone you have in route53; subdomains are okay>
 
-### Deployment Pre-reqs
+### Deployment & Pre-reqs
 
 * make sure you've installed python deps for lambdas as per above (works on linux; on mac you need to use docker which is currently disabled - though code is still in ./manage)
-* `./manage deploy-macros` -- run this first
+* `./manage pip` -- installs deps for custom resources and things
+* `./manage deploy-macros` -- run this after pip but before stack deployment
+* `./manage sync-env dev` -- deploys the main cfn stack -- will fail if deploy-macros has not been run
+
+To deploy two stacks along side eachother the following vars must be unique:
+
+* STACK_NAME
+* NAME_PREFIX
+* SUBDOMAIN
+
+#### DEPRECATED
+
 * `export OFFSET='1'` -- this is just used to allow us to create more than one stack in parallel for dev purposes (by changing offset)
 * `./manage --offset $OFFSET deploy --watch --step 0 voting-dev` -- the `--step N` param allows us to incrementally deploy, which is useful for testing and getting the stack to a state that makes subsequent deployments faster.
 * `./manage --offset $OFFSET deploy --watch --use-existing --step 1 voting-dev`
