@@ -1,6 +1,7 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
+
 Parameters:
   pNamePrefix:
     Type: String
@@ -77,7 +78,6 @@ Globals:
 
 
 Resources:
-
   rSessionDB:
     Type: AWS::Serverless::SimpleTable
     DeletionPolicy: Delete
@@ -89,6 +89,7 @@ Resources:
       SSESpecification:
         SSEEnabled: true
 
+
   rVoterEnrolmentDB:
     Type: AWS::Serverless::SimpleTable
     DeletionPolicy: Delete
@@ -99,6 +100,7 @@ Resources:
         Type: String
       SSESpecification:
         SSEEnabled: true
+
 
   # an admin (service/bot/etc) uses an API key to register a voter's address, weighting, active period, 
   # and logs any arbitrary data needed for later audit
@@ -167,6 +169,7 @@ Resources:
               - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/${pApiDomain}
               - !Sub arn:aws:ses:${AWS::Region}:${AWS::AccountId}:identity/*
 
+
   rMembersOnboardApi:
     Type: AWS::Serverless::Api
     Properties:
@@ -184,6 +187,7 @@ Resources:
       Stage: !Ref pApiStageName
       RestApiId: !Ref rMembersOnboardApi
 
+
   rMemberEmailDeliverySNS:
     Type: AWS::SNS::Topic
     Properties:
@@ -195,17 +199,20 @@ Resources:
           Protocol: sqs
       TopicName: !Sub ${pNamePrefix}-member-email-deliveries
 
+
   rMemberEmailDeliverySQS:
     Type: AWS::SQS::Queue
     Properties:
       MessageRetentionPeriod:  1209600  # 14 days, the maximum
       QueueName: !Sub ${pNamePrefix}-member-email-deliveries
 
+
 # Template format error: Unrecognized resource types: [AWS::SES::ConfigurationSet]
 #  rMemberEmailConfigurationSet:
 #    Type: AWS::SES::ConfigurationSet
 #    Properties:
 #      Name: !Sub ${pNamePrefix}-member-email-deliveries
+
 
 # Can't push to SNS from CFN :/ -- ffs amazon get your act together
 #  rMemberEmailConfigurationSetDestination:
