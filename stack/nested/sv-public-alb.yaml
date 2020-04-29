@@ -38,19 +38,19 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
 
-  # rLoadBalancer:
-  #   Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-  #   Properties:
-  #     IpAddressType: ipv4
-  #     LoadBalancerAttributes:
-  #       - Key: idle_timeout.timeout_seconds
-  #         Value: 3600
-  #     Name: !Sub ${pNamePrefix}-public-alb
-  #     Scheme: internet-facing
-  #     SecurityGroups:
-  #       - !GetAtt rPublicSG.GroupId
-  #     Subnets: !Split [',', !Ref pSubnets]
-  #     Type: application
+  rLoadBalancer:
+    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+    Properties:
+      IpAddressType: ipv4
+      LoadBalancerAttributes:
+        - Key: idle_timeout.timeout_seconds
+          Value: 3600
+      Name: !Sub ${pNamePrefix}-public-alb
+      Scheme: internet-facing
+      SecurityGroups:
+        - !GetAtt rPublicSG.GroupId
+      Type: application
+      # Subnets: !Split [',', !Ref pSubnets]
 
   rTargetGroupWs:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
