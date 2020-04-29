@@ -10,3 +10,4 @@ __tmp*
 _manager_cache.yaml
 .env.*
 .node-xml*
+*.priv

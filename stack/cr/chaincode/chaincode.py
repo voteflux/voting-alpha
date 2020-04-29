@@ -211,6 +211,19 @@ def get_chainid(name_prefix: str) -> str:
     return ssm.get_parameter(Name=gen_ssm_networkid(name_prefix))['Parameter']['Value']
 
 
+def send_raw_bump_nonce(w3, acct, tx: dict):
+    try:
+        tx['nonce'] = get_next_nonce(w3, acct)
+        signed_tx = acct.signTransaction(tx)
+        tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+        w3.eth.waitForTransactionReceipt(tx_id)
+        return signed_tx, tx_id
+    except ValueError as e:
+        if "Transaction nonce is too low" in str(e):
+            time.sleep(0.1)
+            return send_raw_bump_nonce(w3, acct, tx)
+
+
 def wait_for_tx_confirmed(w3: Web3, _tx_id, timeout=120, poll_rate=0.1) -> bool:
     _tx_r = w3.eth.waitForTransactionReceipt(_tx_id, timeout, poll_rate)
     return True
@@ -376,10 +389,10 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
         _inputs = []
         if len(inputs) > 0:
             abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(prev_outs, _input)} for (i, _input) in enumerate(inputs)]}
-            abi.update({'payable': 'false', "stateMutability": "nonpayable"})
+            abi.update({'payable': False, "stateMutability": "nonpayable", "constant": False})
             tx = {'gasPrice': 1, 'gas': 7500000}
             if 'Value' in sc_op:
-                abi.update({'payable': 'true', 'stateMutability': 'payable'})
+                abi.update({'payable': True, 'stateMutability': 'payable', "constant": False})
                 tx.update({'value': int(sc_op['Value'])})
             _inputs = list(map(curry(resolve_var_val)(acct)(prev_outs)(dry_run=dry_run), [varval_from_input(i) for i in inputs]))
             log.info(f'inputs to constructor/function: {_inputs}')
@@ -388,10 +401,12 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
             if func is not None:  # is not constructor
                 func_addr_ptr, func_name = func.split('.')
                 func_addr = resolve_var_val(acct, prev_outs, func_addr_ptr, dry_run=dry_run)
-                abi.update({"type": "function", "name": func_name, "outputs": [], "constant": False, 'stateMutability': 'view'})
+                abi.update({"type": "function", "name": func_name, "outputs": []})
+                if abi['stateMutability'] == "nonpayable" and sc_op['Type'] == "call":
+                    abi.update({"constant": True, 'stateMutability': 'view'})
                 ret_types = sc_op.get('ReturnTypes', None)
                 if ret_types:
-                    abi.update({'outputs': [{'name': '', 'type': r} for r in ret_types], "constant": True})
+                    abi.update({'outputs': [{'name': '', 'type': r} for r in ret_types], 'stateMutability': 'view', "constant": True})
                 log.info(f"do_inputs: {func_addr}.{func_name}({', '.join(map(str, _inputs))}) w/ abi: {abi} returns {ret_types}")
                 if ret_types:
                     resp = w3.eth.contract(abi=[abi], address=func_addr).functions[func_name](*_inputs).call()
@@ -501,15 +516,14 @@ def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
             tx, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next, dry_run=dry_run)
             log.info(f"CallTx got from process_bytecode: {tx}")
 
-            tx['nonce'] = nonce
-            nonce += 1
-            signed_tx = acct.signTransaction(tx)
-            tx_id = w3.eth.sendRawTransaction(signed_tx.rawTransaction)
+            signed_tx, tx_id = send_raw_bump_nonce(w3, acct, tx)
             w3.eth.waitForTransactionReceipt(tx_id)
+            log.info(f"CallTx got txid: {tx_id.hex()} with raw transaction: {signed_tx['rawTransaction']}")
             with Timer(f'calltx {entry_name}') as t:
                 tx_r = w3.eth.getTransactionReceipt(tx_id)
             time.sleep(0.5)
 
+            log.info(f"Saving txid under in parameter store under {ssm_calltx}")
             put_param_no_enc(ssm_calltx, tx_id.hex(), description=f"TXID for {entry_name} (calltx) operation",
                              overwrite=True, dry_run=dry_run)
             put_param_no_enc(ssm_inputs, _inputs, description=f"Inputs for {entry_name} (calltx) operation",

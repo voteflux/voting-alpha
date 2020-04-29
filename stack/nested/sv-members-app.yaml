@@ -41,6 +41,15 @@ Parameters:
   pVoterGroupToAddressMapJson:
     Type: String
 
+  pMemberEmailDeliveryNotificationEmail:
+    Type: String
+
+  pSesConfigurationSetName:
+    Type: String
+    Default: "delivery-notifications"
+
+  pHashSalt:
+    Type: String
     
 
 Conditions:
@@ -109,6 +118,8 @@ Resources:
           VOTING_ALPHA_TEST_ENV: !If [ cDev, "True", "False" ]
           pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
           pEthHost: !Ref pEthHost
+          SesConfigurationSetName: !Ref pSesConfigurationSetName
+          pHashSalt: !Ref pHashSalt
       Handler: api.handlers.message_handler
       Runtime: python3.7
       Layers:
@@ -172,6 +183,38 @@ Resources:
       DomainName: !Ref pApiDomain
       Stage: !Ref pApiStageName
       RestApiId: !Ref rMembersOnboardApi
+
+  rMemberEmailDeliverySNS:
+    Type: AWS::SNS::Topic
+    Properties:
+      DisplayName: !Sub ${pNamePrefix}-member-email-deliveries
+      Subscription:
+        - Endpoint: !Ref pMemberEmailDeliveryNotificationEmail
+          Protocol: email
+        - Endpoint: !GetAtt rMemberEmailDeliverySQS.Arn
+          Protocol: sqs
+      TopicName: !Sub ${pNamePrefix}-member-email-deliveries
+
+  rMemberEmailDeliverySQS:
+    Type: AWS::SQS::Queue
+    Properties:
+      MessageRetentionPeriod:  1209600  # 14 days, the maximum
+      QueueName: !Sub ${pNamePrefix}-member-email-deliveries
+
+# Template format error: Unrecognized resource types: [AWS::SES::ConfigurationSet]
+#  rMemberEmailConfigurationSet:
+#    Type: AWS::SES::ConfigurationSet
+#    Properties:
+#      Name: !Sub ${pNamePrefix}-member-email-deliveries
+
+# Can't push to SNS from CFN :/ -- ffs amazon get your act together
+#  rMemberEmailConfigurationSetDestination:
+#    Type: AWS::SES::ConfigurationSetEventDestination
+#    Properties:
+#      ConfigurationSetName: !Ref rMemberEmailConfigurationSet
+#      EventDestination:
+#        Enabled: true
+#        MatchingEventTypes:
 
 
 Outputs:

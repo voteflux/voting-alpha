@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from traceback import print_tb
 
-from click import Command, command
+from click import Command, command, Option
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -126,6 +126,11 @@ class CmdRunner:
 
 def print_output(msg):
     print("\n### RESULT ###\n\n{}".format(msg))
+
+
+#
+# CFN STACKS
+#
 
 
 def get_stack(stack_name):
@@ -502,12 +507,33 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
         sys.stderr.write(f"Error in stream events: {_e}, {repr(_e)}")
 
 
-def s3_upload(filepath, obj_key, public_read=True):
-    s3 = boto3.client('s3')
-    s3_tfer = S3Transfer(s3)
+cached_s3 = None
+
+
+def get_s3_and_tfer():
+    global cached_s3
+    if cached_s3 is None:
+        cached_s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(cached_s3)
+    return cached_s3, s3_tfer
+
+
+def s3_upload(obj_key, public_read=True, bucket_name=S3_DEV_BUCKET, filepath: str = None, binary_data: bytes = None):
+    s3, s3_tfer = get_s3_and_tfer()
     extra_args = {'ACL': 'public-read'} if public_read else {}
-    s3_tfer.upload_file(filepath, S3_DEV_BUCKET, obj_key, extra_args=extra_args)
-    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+    if filepath and binary_data:
+        raise Exception('cannot upload both a file and raw bytes - pick one')
+    if filepath:
+        s3_tfer.upload_file(filepath, bucket_name, obj_key, extra_args=extra_args)
+    elif binary_data:
+        s3.put_object(
+            Body=binary_data,
+            Bucket=bucket_name,
+            ContentMD5=hashlib.md5(binary_data).hexdigest(),
+            Key=obj_key,
+            **({'ACL': 'public-read'} if public_read else {})
+        )
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, bucket_name, obj_key)
     return obj_url
 
 
@@ -640,7 +666,7 @@ def upload_func(func_path, func_name):
     with open('./tmp-func.zip', 'rb') as f:
         zip_bytes = f.read()
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
-    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+    # obj_url = s3_upload(obj_key, filepath=hashlib.sha256(zip_bytes).hexdigest() + ".zip")
 
     awslam = boto3.client('lambda')
     awslam.update_function_code(FunctionName=func_name, ZipFile=zip_bytes, Publish=True)
@@ -660,7 +686,7 @@ def deploy_nestedstack(stack_path, stack_name, params):
 
     filename = os.path.basename(stack_path)
     obj_key = f'./ns-dev/tmp-{int(time.time())}-{filename}'
-    obj_url = s3_upload(TMP_TMPL_FILE, obj_key)
+    obj_url = s3_upload(obj_key, filepath=TMP_TMPL_FILE)
 
     if not params:
         prev_params = cfn.describe_stacks(StackName=stack_name)['Stacks'][0]['Parameters']
@@ -751,6 +777,9 @@ def _step_to_parameters(step: int):
 @click.pass_context
 def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
                 use_last_uploaded, step):
+
+    raise Exception('deprecated')
+
     if stack_name == '':
         stack_name = TEST_STACK_NAME
 
@@ -868,7 +897,9 @@ def default_params_from_env(env_name, evs):
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
         'pCreateAlb': 'true',
-        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name])
+        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name]),
+        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL'),
+        'pHashSalt': evs.get('PRIV_FAILING_EMAIL_SALT', os.urandom(10).hex()),
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
@@ -883,10 +914,13 @@ def gen_packaged_stack_tmp_filename(env_name):
 
 def get_evs(env_name, do_load=True):
     env_file = f'.env.{env_name}'
-    if do_load:
-        load_dotenv(env_file, override=True)
-    evs = AttrDict(dotenv_values(env_file))
-    return evs
+    if os.path.exists(env_file):
+        if do_load:
+            load_dotenv(env_file, override=True)
+        evs = AttrDict(dotenv_values(env_file))
+        priv_evs = get_evs(f'{env_name}.priv', do_load=do_load)
+        return AttrDict(**evs, **priv_evs)
+    return AttrDict()
 
 
 def get_env_name(env_name: str):
@@ -928,8 +962,7 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
 
     tmp_template_filename = gen_packaged_stack_tmp_filename(env_name)
     obj_key = f"templates/{env_name}" + os.path.split(evs.STACK_TEMPLATE)[-1]
-    s3 = boto3.client('s3')
-    s3_tfer = S3Transfer(s3)
+    s3, s3_tfer = get_s3_and_tfer()
 
     try:
         s3.get_bucket_acl(Bucket=evs.S3_CFN_SUPPORT_BUCKET)
@@ -1028,7 +1061,9 @@ def package_lambda(resource_name: str, lambda_path: str, layers: List[Path]):
 @click.argument('env-name', type=click.STRING, default='dev')
 @click.argument('resource-name')
 @click.argument('nested', nargs=-1)
-def upload_func(env_name, resource_name, nested):
+@click.option('--upload-layers', is_flag=True, default=False)
+def sync_lambda(env_name, resource_name, nested, upload_layers=False):
+    raise Exception("not working atm")
     env_name = get_env_name(env_name)
     evs = get_evs(env_name)
     root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
@@ -1037,9 +1072,13 @@ def upload_func(env_name, resource_name, nested):
     for ns_logical_name in nested:
         (last_path, last_name, last_stack) = tmpls[-1]
         ns_resource = last_stack['Resources'][ns_logical_name]
-        ns_path = last_path / Path(ns_resource['Properties']['TemplateURL'])
+        path_key = ({
+            "AWS::Serverless::Application": "Location",
+            "AWS::CloudFormation::Stack": "TemplateURL"
+        })[ns_resource['Type']]
+        ns_path = last_path / Path(ns_resource['Properties'][path_key])
         ns_stack_name = get_stack_resource(last_name, ns_logical_name)['PhysicalResourceId'].split('/')[-2]
-        tmpls.append((ns_path.parent, ns_stack_name, cfn_tools.load_yaml(ns_path)))
+        tmpls.append((ns_path.parent, ns_stack_name, cfn_tools.load_yaml(ns_path.read_text())))
 
     final_tmpl_dir, final_stack_name, final_tmpl = tmpls[-1]
     lambda_func_name = get_stack_resource(final_stack_name, resource_name)['PhysicalResourceId']
@@ -1050,16 +1089,19 @@ def upload_func(env_name, resource_name, nested):
 
     print(lambda_path, lambda_code_uri, lambda_res)
 
-    layers = [] if 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
+    layers = [] if not upload_layers or 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
     tmp_zip = package_lambda(resource_name, lambda_path, layers)
 
     with open(f'./{tmp_zip}', 'rb') as f:
         zip_bytes = f.read()
     # obj_key = f'./tmp-func-{int(time.time())}.zip'
-    # obj_url = s3_upload(obj_key, hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+    # obj_url = s3_upload(obj_key, filepath=hashlib.sha256(zip_bytes).hexdigest() + ".zip")
+
+    obj_key = f'sync-lambda{resource_name}.zip'
+    zip_url = s3_upload(obj_key=obj_key, bucket_name=S3_DEV_BUCKET, binary_data=zip_bytes)
 
     awslam = boto3.client('lambda')
-    resp = awslam.update_function_code(FunctionName=lambda_func_name, ZipFile=zip_bytes,
+    resp = awslam.update_function_code(FunctionName=lambda_func_name, S3Key=obj_key,
                                        S3Bucket=evs.S3_CFN_SUPPORT_BUCKET, Publish=True)
 
     print_output(f"Updated function {lambda_func_name}. Resp: {resp}")
@@ -1106,6 +1148,22 @@ script_info = {
         'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
         'function': '_member_rego_stats',
         'click_f': 'member_rego_stats'
+    },
+    'setMemberVotingWeight': {
+        'module': 'stack.app.members.api.scripts.memberVotingWeight',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_set_member_voting_weight',
+        'click_f': 'set_member_voting_weight',
+        'args': [('http_provider', 'oWeb3Provider', 'cfn')]
+    },
+    'getMemberVotingWeight': {
+        'module': 'stack.app.members.api.scripts.memberVotingWeight',
+        'env_vars': ['AWS_PROFILE', 'AWS_DEFAULT_REGION', 'NAME_PREFIX'],
+        'remap_env': [('NAME_PREFIX', 'pNamePrefix')],
+        'function': '_get_member_voting_weight',
+        'click_f': 'get_member_voting_weight',
+        'args': [('http_provider', 'oWeb3Provider', 'cfn')]
     }
 }
 
@@ -1151,9 +1209,6 @@ cli.add_command(scripts)
 @click.option('--gen-args', default=False, is_flag=True)
 @click.pass_context
 def run_script(ctx, script_name, args, gen_args):
-    # if gen_args and len(args) > 0:
-    #     raise Exception("can't specify both --gen-args and provide args")
-
     env_name = get_env_name(ctx.parent.params['env'])
     evs = get_evs(env_name, do_load=False)
     our_script = script_info[script_name]
@@ -1192,9 +1247,11 @@ scripts.add_command(run_script)
 
 
 @click.group('run')
+@click.option('--gen-args', is_flag=True, default=False)
 @click.pass_context
-def run_dynamic(ctx):
-    pass
+def run_dynamic(ctx, gen_args):
+    ctx.obj['gen_args'] = gen_args
+    evs = ctx.obj['evs']
 
 
 # prep import and remove a bunch-o-modules
@@ -1211,6 +1268,18 @@ def gen_cmd(_script, _script_name, _script_params):
         # logger.info(f'Script: {_script}')
 
         evs = ctx.obj['evs']
+        gen_args = ctx.obj['gen_args']
+        generated_opts = {}
+        if gen_args:
+            stack_ds = cfn_outputs_to_dict(get_stack_details(evs.STACK_NAME)['Outputs'])
+            for (opt_name, output_name, source) in _script['args']:
+                if source == 'cfn':
+                    generated_opts[opt_name] = stack_ds[output_name]
+                    print(f"checking {opt_name} in {ctx.params} {ctx.args}")
+                    if any(filter(lambda p: p == opt_name and ctx.params[p] is None, ctx.params)):
+                        ctx.params[opt_name] = generated_opts[opt_name]
+                else:
+                    raise Exception('no other sources of args supported')
 
         env_vars_to_load = {k: v for (k, v) in evs.items() if script_needs_env(_script_name, k)}
         logger.info(env_vars_to_load)
@@ -1226,10 +1295,24 @@ def gen_cmd(_script, _script_name, _script_params):
             for (oldName, newName) in script['remap_env']:
                 os.environ[newName] = os.environ[oldName]
 
+        # ctx.params
+
+        logging.info(f'Running dynamically loaded command: {script_invoke_name} with args: {ctx.args} {ctx.params}')
+
+        kwargs.update(generated_opts)
+
         script_module = importlib.import_module(_script['module']) # importlib.import_module(script['module'])
         ctx.invoke(getattr(script_module, _script['click_f']), **kwargs)
 
-    new_cmd.params = _script_params
+    generatable_opts = list([a[0] for a in _script.get('args', [])])
+    print(generatable_opts)
+
+    def mod_p(p):
+        if p.name in generatable_opts:
+            p.required = False
+        return p
+
+    new_cmd.params = list([mod_p(p) for p in _script_params])
     return new_cmd
 
 
