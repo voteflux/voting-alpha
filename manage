@@ -186,6 +186,9 @@ def stack_del_if_necessary(stack_name):
 
 def create_stack(stack_name, obj_url, params_aws):
     extra = {} if params_aws is None else {'Parameters': params_aws}
+
+    logger.info(f"Parameters and extra provided to cfn_create_stack: {json.dumps(extra, indent=2)}")
+
     r = cfn.create_stack(
         StackName=stack_name,
         TemplateURL=obj_url,
@@ -897,8 +900,8 @@ def default_params_from_env(env_name, evs):
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
         'pCreateAlb': 'true',
-        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name]),
-        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL'),
+        'pVoterGroupToAddressMapJson': "{}", # todo: figure out if there are any liabilities from cutting it out in this way # json.dumps(voter_group_to_scs[env_name]),
+        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL', 'not-real@example.comnetau'),
         'pHashSalt': evs.get('PRIV_FAILING_EMAIL_SALT', os.urandom(10).hex()),
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
@@ -949,6 +952,8 @@ def watch_env(env_name, no_fullscreen):
 @click.option("--no-fullscreen", default=False, is_flag=True)
 @click.pass_context
 def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded, no_fullscreen):
+    if update_params:
+        raise Exception('unimplemented')
     if set_params and update_params:
         raise Exception("Cannot set and update params at the same time. Use one.")
     fullscreen = not no_fullscreen

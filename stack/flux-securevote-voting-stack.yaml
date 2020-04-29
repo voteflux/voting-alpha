@@ -135,11 +135,12 @@ Parameters:
       - t3.micro
       - t2.small
       - t2.medium
+      - t3.small
+      - t3.medium
+    ConstraintDescription: Please choose a valid instance type.
 #      - t2.large
 #      - t2.xlarge
 #      - t2.2xlarge
-      - t3.small
-      - t3.medium
 #      - m3.medium
 #      - m3.large
 #      - m3.xlarge
@@ -171,7 +172,6 @@ Parameters:
 #      - c5.4xlarge
 #      - c5.9xlarge
 #      - c5.18xlarge
-    ConstraintDescription: Please choose a valid instance type.
   pAmiId:
     Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
@@ -213,6 +213,11 @@ Parameters:
 
   pHashSalt:
     Type: String
+
+  pVpc:
+    Type: String
+    Default: vpc-15818172  # flux dev acct default VPC ID
+
 
 Conditions:
   cHasSSHKey:
@@ -741,7 +746,7 @@ Resources:
         pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
         pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
-        pVpcId: unknown
+        pVpcId: !Ref pVpc
 
   rAlbDomain:
     Type: AWS::Route53::RecordSet
