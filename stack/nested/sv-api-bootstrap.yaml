@@ -15,7 +15,6 @@ Parameters:
     Type: String
 
 
-
 Resources:
   rApiDomain:
     Type: AWS::ApiGateway::DomainName
@@ -23,6 +22,7 @@ Resources:
       DomainName: !Sub api.${pSubdomain}.${pDomain}
       RegionalCertificateArn: !Ref pCertArn
       EndpointConfiguration: { Types: [REGIONAL] }
+
 
   rApiDomainRecord:
     Type: AWS::Route53::RecordSet
@@ -33,7 +33,6 @@ Resources:
         DNSName: !GetAtt rApiDomain.RegionalDomainName
         HostedZoneId: !GetAtt rApiDomain.RegionalHostedZoneId
       Type: A
-
 
 
 Outputs:

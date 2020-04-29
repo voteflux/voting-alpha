@@ -18,6 +18,9 @@ Parameters:
     Type: String
 
 
+# TODO: Fix up loadbalancer + listners
+
+
 Resources:
 
   rPublicSG:
@@ -35,20 +38,20 @@ Resources:
           ToPort: 443
           CidrIp: 0.0.0.0/0
 
-  rLoadBalancer:
-    Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    Properties:
-      IpAddressType: ipv4
-      LoadBalancerAttributes:
-        - Key: idle_timeout.timeout_seconds
-          Value: 3600
-      Name: !Sub ${pNamePrefix}-public-alb
-      Scheme: internet-facing
-      SecurityGroups:
-        - !GetAtt rPublicSG.GroupId
-      Subnets: !Split [',', !Ref pSubnets]
-      Type: application
-#
+  # rLoadBalancer:
+  #   Type: AWS::ElasticLoadBalancingV2::LoadBalancer
+  #   Properties:
+  #     IpAddressType: ipv4
+  #     LoadBalancerAttributes:
+  #       - Key: idle_timeout.timeout_seconds
+  #         Value: 3600
+  #     Name: !Sub ${pNamePrefix}-public-alb
+  #     Scheme: internet-facing
+  #     SecurityGroups:
+  #       - !GetAtt rPublicSG.GroupId
+  #     Subnets: !Split [',', !Ref pSubnets]
+  #     Type: application
+
   rTargetGroupWs:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
@@ -77,49 +80,49 @@ Resources:
       TargetType: instance
       VpcId: !Ref pVpcId
 
-  rListenerWss:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      Certificates:
-        - { CertificateArn: !Ref pCertificateArn }
-      DefaultActions:
-        - TargetGroupArn: !Ref rTargetGroupWs
-          Type: forward
-      LoadBalancerArn: !Ref rLoadBalancer
-      Port: 8546
-      Protocol: HTTPS
+  # rListenerWss:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     Certificates:
+  #       - { CertificateArn: !Ref pCertificateArn }
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref rTargetGroupWs
+  #         Type: forward
+  #     LoadBalancerArn: !Ref rLoadBalancer
+  #     Port: 8546
+  #     Protocol: HTTPS
 
-  rListenerHttps:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      Certificates:
-        - { CertificateArn: !Ref pCertificateArn }
-      DefaultActions:
-        - TargetGroupArn: !Ref rTargetGroupHttp
-          Type: forward
-      LoadBalancerArn: !Ref rLoadBalancer
-      Port: 8545
-      Protocol: HTTPS
+  # rListenerHttps:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     Certificates:
+  #       - { CertificateArn: !Ref pCertificateArn }
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref rTargetGroupHttp
+  #         Type: forward
+  #     LoadBalancerArn: !Ref rLoadBalancer
+  #     Port: 8545
+  #     Protocol: HTTPS
 
-  rListenerHttps443:
-    Type: AWS::ElasticLoadBalancingV2::Listener
-    Properties:
-      Certificates:
-        - { CertificateArn: !Ref pCertificateArn }
-      DefaultActions:
-        - TargetGroupArn: !Ref rTargetGroupHttp
-          Type: forward
-      LoadBalancerArn: !Ref rLoadBalancer
-      Port: 443
-      Protocol: HTTPS
+  # rListenerHttps443:
+  #   Type: AWS::ElasticLoadBalancingV2::Listener
+  #   Properties:
+  #     Certificates:
+  #       - { CertificateArn: !Ref pCertificateArn }
+  #     DefaultActions:
+  #       - TargetGroupArn: !Ref rTargetGroupHttp
+  #         Type: forward
+  #     LoadBalancerArn: !Ref rLoadBalancer
+  #     Port: 443
+  #     Protocol: HTTPS
 
 
 Outputs:
   oWebsocketTargetGroup:
     Value: !Ref rTargetGroupWs
 
-  oAlbDnsName:
-    Value: !GetAtt rLoadBalancer.DNSName
+  # oAlbDnsName:
+  #   Value: !GetAtt rLoadBalancer.DNSName
 
-  oAlbCanonHzId:
-    Value: !GetAtt rLoadBalancer.CanonicalHostedZoneID
+  # oAlbCanonHzId:
+  #   Value: !GetAtt rLoadBalancer.CanonicalHostedZoneID

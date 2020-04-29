@@ -128,6 +128,11 @@ def print_output(msg):
     print("\n### RESULT ###\n\n{}".format(msg))
 
 
+def pause():
+    print("Press any key to continue...", end="")
+    input()
+
+
 #
 # CFN STACKS
 #
@@ -901,7 +906,7 @@ def default_params_from_env(env_name, evs):
         'pDeployMacros': 'false',
         'pCreateAlb': 'true',
         'pVoterGroupToAddressMapJson': "{}", # todo: figure out if there are any liabilities from cutting it out in this way # json.dumps(voter_group_to_scs[env_name]),
-        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL', 'not-real@example.comnetau'),
+        'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL', 'not@real.addressBlah18975kjdfng'),
         'pHashSalt': evs.get('PRIV_FAILING_EMAIL_SALT', os.urandom(10).hex()),
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
@@ -950,11 +955,11 @@ def watch_env(env_name, no_fullscreen):
 @click.option("--use-last-uploaded", default=False, is_flag=True,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
 @click.option("--no-fullscreen", default=False, is_flag=True)
+@click.option("--step", default=3, type=click.IntRange(0, 3), help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
 @click.pass_context
-def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded, no_fullscreen):
-    if update_params:
-        raise Exception('unimplemented')
-    if set_params and update_params:
+def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded, no_fullscreen, step):
+    _update_params = {} if not update_params else json.loads(update_params)
+    if set_params and _update_params:
         raise Exception("Cannot set and update params at the same time. Use one.")
     fullscreen = not no_fullscreen
 
@@ -989,8 +994,11 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     print(f"Template URL: {obj_url}")
 
     params = default_params_from_env(env_name, evs)
-    # params.update(**_step_to_parameters(step))
+    params.update(**_update_params)
+    params.update(**_step_to_parameters(step))
     params_aws = dict_to_cfn_params(params)
+
+    print(json.dumps(params_aws, indent=2))
 
     cfn_console_create_url = "https://console.aws.amazon.com/cloudformation/home?region={region}#/stacks/new?stackName={stack_name}&templateURL={tmpl_url}".format(
         obj_url, region=s3.meta.region_name, stack_name=stack_name, tmpl_url=urllib.parse.quote(obj_url, safe=''))

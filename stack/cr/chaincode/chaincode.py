@@ -245,7 +245,7 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
         'chainId': chainid,
         'data': c_out.bytecode
     }
-    # log.info(f"Signing transaction: {update_dict(dict(unsigned_tx), {'data': f'<Data, len: {len(c_out.bytecode)}>'})}")
+    log.info(f"Signing transaction: {update_dict(dict(unsigned_tx), {'data': f'<Data, len: {len(c_out.bytecode)}>'})}")
     signed_tx = acct.signTransaction(unsigned_tx)
     log.info(f"Signed transaction: {signed_tx}")
 
@@ -521,7 +521,7 @@ def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
             log.info(f"CallTx got txid: {tx_id.hex()} with raw transaction: {signed_tx['rawTransaction']}")
             with Timer(f'calltx {entry_name}') as t:
                 tx_r = w3.eth.getTransactionReceipt(tx_id)
-            time.sleep(0.5)
+            time.sleep(4)
 
             log.info(f"Saving txid under in parameter store under {ssm_calltx}")
             put_param_no_enc(ssm_calltx, tx_id.hex(), description=f"TXID for {entry_name} (calltx) operation",

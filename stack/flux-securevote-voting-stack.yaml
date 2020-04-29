@@ -220,6 +220,8 @@ Parameters:
 
 
 Conditions:
+  cFalse: !Equals [ "true", "false" ]
+  cTrue: !Equals [ "true", "true" ]
   cHasSSHKey:
     Fn::Not: [!Equals [ !Ref SSHKey, '' ]]
   cHasSSHEncPw:
@@ -240,10 +242,10 @@ Conditions:
   cCreateChaincodeStack:
     !And [{ Condition: cCreateNodes }, !Equals [ !Ref pCreateChaincodeStack, 'true' ] ]
   cCreateMembersApp:
-    !And [{ Condition: cCreateChaincodeStack }, !Equals [ !Ref pCreateMembersApp, 'true' ] ]
+    !And [{ Condition: cCreateChaincodeStack }, !And [ !Equals [ !Ref pCreateMembersApp, 'true' ], { Condition: cTrue } ] ]
+    # !Equals [ "true", "false" ]
   cCreateAlb:
     !And [{ Condition: cCreateMembersApp }, !Equals [ !Ref pCreateAlb, 'true' ] ]
-
 
 
 Globals:
@@ -257,7 +259,6 @@ Globals:
 
 
 Resources:
-
   rLambdaLayer:
     Type: AWS::Serverless::LayerVersion
     DeletionPolicy: Delete
@@ -266,6 +267,7 @@ Resources:
       Description: layer for all/common deps for custom resources / lambdas
       LayerName: !Sub ${NamePrefix}-common-layer
 
+
   rMacroStack:
     Condition: cDeployMacros
     Type: AWS::CloudFormation::Stack
@@ -273,6 +275,7 @@ Resources:
       TemplateURL: ./sv-macros.yaml
       Parameters:
         pLambdaLayer: !Ref rLambdaLayer
+
 
   rAcmCertStack:
     Type: AWS::CloudFormation::Stack
@@ -283,6 +286,7 @@ Resources:
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
         pWildcard: 'true'
+
 
   rStaticBucket:
     Type: AWS::S3::Bucket
@@ -297,6 +301,7 @@ Resources:
       WebsiteConfiguration:
         IndexDocument: index.html
 
+
   rStaticBucketPolicy:
     Type: AWS::S3::BucketPolicy
     Properties:
@@ -309,6 +314,7 @@ Resources:
             Resource: !Sub "arn:aws:s3:::${rStaticBucket}/*"
       Bucket: !Ref rStaticBucket
 
+
   rStaticBucketDomain:
     Type: AWS::Route53::RecordSet
     Properties:
@@ -319,12 +325,14 @@ Resources:
       ResourceRecords:
         - !Sub '"${rStaticBucket.DomainName}"'
 
+
   rStaticBucketCleanupCr:
     Type: Custom::StaticBucketCleanup
     Properties:
       ServiceToken: !GetAtt rStaticBucketCleanupLambda.Arn
       NamePrefix: !Ref NamePrefix
       StaticBucketName: !Ref rStaticBucket
+
 
   rStaticBucketCleanupLambda:
     Type: AWS::Serverless::Function
@@ -342,6 +350,7 @@ Resources:
                 - !GetAtt rStaticBucket.Arn
                 - !Sub ${rStaticBucket.Arn}/*
       Layers: [ !Ref rLambdaLayer ]
+
 
 #  rKms:
 #    Type: AWS::KMS::Key
@@ -365,11 +374,13 @@ Resources:
 ##            AWS:
 ##              - !Sub arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${NamePrefix}-crypto-params-cr
 #
+
 #  rKmsAlias:
 #    Type: AWS::KMS::Alias
 #    Properties:
 #      AliasName: !Sub alias/${NamePrefix}-general-kms-key
 #      TargetKeyId: !GetAtt rKms.Arn
+
 
   rConsensusSG:
     Type: AWS::EC2::SecurityGroup
@@ -390,6 +401,7 @@ Resources:
           FromPort: 22
           ToPort: 22
           CidrIp: 0.0.0.0/0
+
 
   rPublicSG:
     Type: AWS::EC2::SecurityGroup
@@ -422,6 +434,7 @@ Resources:
 #        - IpProtocol: "-1"
 #          CidrIp: 0.0.0.0/0
 
+
   rParamsCr:
     Type: Custom::Params
     Properties:
@@ -438,6 +451,7 @@ Resources:
       StackTesting: 'true'  # set to '' to disable
       pEnodeIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
       Nonce: 348989348
+
 
   rParamsLambda:
     Type: AWS::Serverless::Function
@@ -494,6 +508,7 @@ Resources:
       NConsensusNodes: !Ref NumberOfEthereumConsensusNodes
       NPublicNodes: !Ref NumberOfEthereumPublicNodes
 
+
   rEthPrivkeysLambda:
     Type: AWS::Serverless::Function
     Properties:
@@ -525,11 +540,13 @@ Resources:
                 - ssm:DescribeParameters
               Resource: '*'
 
+
   rNamePrefixStaticCr:
     Type: Custom::NamePrefixStatic
     Properties:
       ServiceToken: !GetAtt rNamePrefixStaticLambda.Arn
       NamePrefix: !Ref NamePrefix
+
 
   rNamePrefixStaticLambda:
     Type: AWS::Serverless::Function
@@ -541,6 +558,7 @@ Resources:
       FunctionName: !Sub ${NamePrefix}-nameprefix-static-cr
       Timeout: 30
       Policies: []
+
 
 #  rVpc:
 #    Type: AWS::EC2::VPC
@@ -618,6 +636,7 @@ Resources:
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
 
+
   rConsensusNode1:
     Type: AWS::CloudFormation::Stack
     Condition: cCreateNodes
@@ -634,6 +653,7 @@ Resources:
         pSignerAddress: !Select [ 1, !GetAtt rEthPrivkeysCr.PoAAddresses ]
         pDomain: !Ref HostedZoneDomain
         pSubdomain: !Ref Subdomain
+
 
   # todo: macro these out
   rPublicNode0:
@@ -653,6 +673,7 @@ Resources:
         pSubdomain: !Ref Subdomain
         pEipAddress: !Select [ 0, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oPublicIps ] ]
 
+
   rPublicNode1:
     Type: AWS::CloudFormation::Stack
     Condition: cCreateNodes
@@ -670,6 +691,7 @@ Resources:
         pSubdomain: !Ref Subdomain
         pEipAddress: !Select [ 1, !Split [ ',', !GetAtt rPublicNodeEips.Outputs.oPublicIps ] ]
 
+
   rPublicNodeEips:
     Type: AWS::CloudFormation::Stack
     Properties:
@@ -677,6 +699,7 @@ Resources:
       Parameters:
         pNPublicNodes: !Ref NumberOfEthereumPublicNodes
         pDependsShim: !If [ cDeployMacros, !Ref rMacroStack, !Ref rStaticBucket ]
+
 
   rChaincodeStack:
     Type: AWS::CloudFormation::Stack
@@ -748,16 +771,16 @@ Resources:
         pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
         pVpcId: !Ref pVpc
 
-  rAlbDomain:
-    Type: AWS::Route53::RecordSet
-    Condition: cCreateAlb
-    Properties:
-      HostedZoneName: !Sub ${HostedZoneDomain}.
-      AliasTarget:
-        DNSName: !GetAtt rPublicLoadBalancer.Outputs.oAlbDnsName
-        HostedZoneId: !GetAtt rPublicLoadBalancer.Outputs.oAlbCanonHzId
-      Name: !Sub nodes.${Subdomain}.${HostedZoneDomain}.
-      Type: A
+  # rAlbDomain:
+  #   Type: AWS::Route53::RecordSet
+  #   Condition: cCreateAlb
+  #   Properties:
+  #     HostedZoneName: !Sub ${HostedZoneDomain}.
+  #     AliasTarget:
+  #       DNSName: !GetAtt rPublicLoadBalancer.Outputs.oAlbDnsName
+  #       HostedZoneId: !GetAtt rPublicLoadBalancer.Outputs.oAlbCanonHzId
+  #     Name: !Sub nodes.${Subdomain}.${HostedZoneDomain}.
+  #     Type: A
 
 Outputs:
   oChainSpecUrl:
@@ -797,20 +820,28 @@ Outputs:
 #       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthJsonRPCURL"]
 
   oMembershipAddr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
   oDemocHash:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oDemocHash
   oMkDemocTxid:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oMkDemocTxid
   oIndexAddr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oIndexAddr
   oBBFarmAddr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAddr
   oBBFarmAux2Addr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oBBFarmAux2Addr
   oTokenAbbrLookupAddr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oTokenAbbrLookupAddr
   oErc20BalanceProxyAddr:
+    Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oErc20BalanceProxyAddr
 
   oApiUrl:
