@@ -8,10 +8,10 @@ Parameters:
     Type: String
   pVpcId:
     Type: String
-    Default: "vpc-c7252ea2"
+    # Default: "vpc-c7252ea2"
   pSubnets:
     Type: String
-    Default: "subnet-0635c95f,subnet-642dd012,subnet-b900d6dd"
+    # Default: "subnet-0635c95f,subnet-642dd012,subnet-b900d6dd"
   pPublicNode0:
     Type: String
   pPublicNode1:

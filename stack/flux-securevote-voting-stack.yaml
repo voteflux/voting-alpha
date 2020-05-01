@@ -560,6 +560,15 @@ Resources:
       Policies: []
 
 
+  rVpcStack:
+    Type: AWS::Cloudformation::Stack
+    Condition: cCreateMembersApp
+    Properties:
+      TemplateURL: ./nested/vendor/vpc-3azs.yaml
+      Parameters:
+        ClassB: 13
+
+
 #  rVpc:
 #    Type: AWS::EC2::VPC
 #    Properties:
@@ -769,7 +778,8 @@ Resources:
         pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
         pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
-        pVpcId: !Ref pVpc
+        pVpcId: !GetAtt rVpcStack.Outputs.VPC
+        pSubnets: !GetAtt rVpcStack.Outputs.SubnetsPublic
 
   # rAlbDomain:
   #   Type: AWS::Route53::RecordSet
