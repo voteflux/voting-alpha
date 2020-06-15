@@ -139,11 +139,11 @@ Resources:
           Inputs: [ '^self' ]
         - Name: apg-va-self-mbr
           Type: calltx
-          Function: $agp-voting-alpha.operatorAddMember
+          Function: $apg-voting-alpha.operatorAddMember
           Inputs: [ '^self' ]
         - Name: apg-va-init-done
           Type: calltx
-          Function: $agp-voting-alpha.initComplete
+          Function: $apg-voting-alpha.initComplete
 
 
   rChaincodeLambda:
