@@ -3,6 +3,7 @@ import json
 import os
 import sys
 import time
+from pathlib import Path
 
 import boto3
 
@@ -10,8 +11,6 @@ from .bootstrap import *
 
 import jwt
 from eth_account import Account
-from eth_account.messages import encode_defunct, SignableMessage
-import eth_utils
 from api.exceptions import LambdaError
 from attrdict import AttrDict
 from hexbytes import HexBytes
@@ -20,6 +19,7 @@ from pynamodb.attributes import BooleanAttribute, MapAttribute
 from utils import can_base64_decode
 from web3 import Web3, HTTPProvider
 from .common.lib import _hash
+from .common.env import get_env
 from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
@@ -47,67 +47,28 @@ def mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr, weight=1):
     return tx
 
 
+def load_sc(filename):
+    with open(Path(os.path.dirname(__file__)) / 'sc' / filename, 'r') as f:
+        return f.read()
+
+
+def sign_and_send(w3, account, unsigned_tx):
+    my_addr = unsigned_tx['from']
+    next_nonce = w3.eth.getTransactionCount(my_addr)
+    # txs = list([dict(nonce=next_nonce + i, **prev_tx) for (i, prev_tx) in enumerate(unsigned_transactions)])
+    raw_tx = account.signTransaction(dict(nonce=next_nonce, **unsigned_tx)).rawTransaction
+    # raw_txs = list([account.signTransaction(tx).rawTransaction for tx in txs])
+    txid = w3.eth.sendRawTransaction(raw_tx)
+    # txids = list([w3.eth.sendRawTransaction(tx) for tx in raw_txs])
+    w3.eth.waitForTransactionReceipt(txid, poll_latency=0.05)
+    return txid
+
+
 @post_common
 async def handle_quickchain_upgrade(event, ctx, msg):
-    def signup(pl):
-        to_addr = pl["signup"]
-        finished_web3 = False
-        # setup
-        try:
-            priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
-            account = Account.privateKeyToAccount(priv_key)
-            my_addr = account.address
-            w3 = Web3(HTTPProvider(get_env('pEthHost')))
-            membership_addr = lookup_group_contract("main")
-            unsigned_transactions = [ mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr) ]
-            unsigned_transactions.append(
-                {'from': my_addr, 'to': to_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1})
-            log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
-        except Exception as e:
-            log.error(f'got exception during finalization setup: {e}')
-            raise LambdaError(500, msg=f"Unexpected error: {e}",
-                              client_response="Unexpected error occured. Please try again.")
-
-        # main
-        try:
-            start = datetime.datetime.now().isoformat()
-            log.info(f"main start: {start}")
-            out_txs = {}
-            txids = []
-            for unsigned_tx in unsigned_transactions:
-                next_nonce = w3.eth.getTransactionCount(my_addr)
-                # txs = list([dict(nonce=next_nonce + i, **prev_tx) for (i, prev_tx) in enumerate(unsigned_transactions)])
-                raw_tx = account.signTransaction(dict(nonce=next_nonce, **unsigned_tx)).rawTransaction
-                # raw_txs = list([account.signTransaction(tx).rawTransaction for tx in txs])
-                txid = w3.eth.sendRawTransaction(raw_tx)
-                txids.append(txid)
-                # txids = list([w3.eth.sendRawTransaction(tx) for tx in raw_txs])
-                w3.eth.waitForTransactionReceipt(txid, poll_latency=0.05)
-                log.info(f'confirmed: {txid}')
-                # await_all = list([w3.eth.waitForTransactionReceipt(txid) for txid in txids])
-                txr = w3.eth.getTransactionReceipt(txid)
-                out_txs[txid] = txr
-                # txrs = list([w3.eth.getTransactionReceipt(txid) for txid in txids])
-                # if any([txr['status'] == 0 for txr in txrs]):
-                if txr['status'] == 0:
-                    raise OnboardingException()
-
-            log.info(f'first txid in out_txs: {out_txs[txids[0]]}')
-            log.info(f'last txid in out_txs: {out_txs[txids[-1]]}')
-
-            log.info(f"main start: {start}")
-            log.info(f"main end: {datetime.datetime.now().isoformat()}")
-            return {'result': 'success', 'txids': ','.join(txid.hex() for txid in txids)}
-        except Exception as e:
-            # this would be bad, need to have the above as atomic as possible.
-            log.error(e)
-            if "An error occurred (ConditionalCheckFailedException)" in str(e):
-                # this means we couldn't update the enrolment table with the claim
-                pass
-            raise LambdaError(400, {'result': 'failure', 'exception': [str(e), repr(e)]})
-
     def ballot_publish(pl):
-        raise LambdaError(421, {"result": "soz, not impl yet"})
+        spec_hash = pl["spec_hash"]
+        return create_ballot(spec_hash)
 
     try:
         log.info(f"Got msg >>: {json.dumps(msg)}")
@@ -122,6 +83,96 @@ async def handle_quickchain_upgrade(event, ctx, msg):
         log.error(e_str)
         import traceback
         log.error(traceback.extract_tb(e.__traceback__))
+
+
+def create_ballot(spec_hash):
+    p_name_prefix = get_env('pNamePrefix')
+
+    key_name = "publish"
+    priv_key = get_ssm_param(f"sv-{p_name_prefix}-nodekey-service-{key_name}", with_decryption=True)
+    account = Account.privateKeyToAccount(priv_key)
+    print('Loaded account w/ address:', account.address)
+
+    ix_address = get_env("pApgVotingAlphaAddr")
+    http_provider = get_env("pEthHost")
+
+    def base_tx(_from=account.address, value=0, gas=8000000, gas_price=1, to=None):
+        tx = {} if to is None else dict(to=to)
+        tx.update({'from': _from, 'value': value, 'gas': gas, 'gas_price': gas_price})
+        return tx
+
+    w3 = Web3(Web3.HTTPProvider(http_provider))
+    print('Balance:', w3.eth.getBalance(account.address))
+
+    # ixAbi = json.loads(load_sc('SVLightIndex.abi.json'))
+    # ix = w3.eth.contract(abi=ixAbi, address=ix_address)
+
+    voting_alpha_sc_abi = json.loads(load_sc('apguerrera/VotingAlpha.abi.json'))
+    ix = w3.eth.contract(abi=voting_alpha_sc_abi, address=ix_address)
+    tx = base_tx()
+    tx.update(**ix.functions['proposeNationalBill']().buildTransaction(spec_hash))
+    txid = sign_and_send(w3, account, tx)
+    return txid
+
+    # ballots = [{
+    #     "ballotVersion": 1,
+    #     "ballotInner": {
+    #         "ballotTitle": "Quorum",
+    #         "shortDesc": "This establishes a quorum is present. A minimum of ten (10) members combined from the following classes are required: Digital Exchange Members, Blockchain Scale Up Members, Corporate & Advisory Members.",
+    #         "longDesc": "This establishes a quorum is present. A minimum of ten (10) members combined from the following classes are required: Digital Exchange Members, Blockchain Scale Up Members, Corporate & Advisory Members.",
+    #         "erc20Addr": "0x012a9Db1184C054Ad933aD6A951d925a0004Df8b"
+    #     },
+    #     "optionsVersion": 3,
+    #     "optionsInner": {},
+    # }]
+
+
+def signup(pl):
+    to_addr = pl["signup"]
+    # setup
+    try:
+        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
+        account = Account.privateKeyToAccount(priv_key)
+        my_addr = account.address
+        w3 = Web3(HTTPProvider(get_env('pEthHost')))
+        membership_addr = lookup_group_contract("main")
+        unsigned_transactions = [
+            mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr),
+            {'from': my_addr, 'to': to_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
+            ]
+        log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
+    except Exception as e:
+        log.error(f'got exception during finalization setup: {e}')
+        raise LambdaError(500, msg=f"Unexpected error: {e}",
+                          client_response="Unexpected error occured. Please try again.")
+    # main
+    try:
+        start = datetime.datetime.now().isoformat()
+        log.info(f"main start: {start}")
+        out_txs = {}
+        txids = []
+        for unsigned_tx in unsigned_transactions:
+            txid = sign_and_send(w3, account, unsigned_tx)
+            txids.append(txid)
+            log.info(f'confirmed: {txid}')
+            txr = w3.eth.getTransactionReceipt(txid)
+            out_txs[txid] = txr
+            if txr['status'] == 0:
+                raise OnboardingException()
+
+        log.info(f'first txid in out_txs: {out_txs[txids[0]]}')
+        log.info(f'last txid in out_txs: {out_txs[txids[-1]]}')
+
+        log.info(f"main start: {start}")
+        log.info(f"main end: {datetime.datetime.now().isoformat()}")
+        return {'result': 'success', 'txids': ','.join(txid.hex() for txid in txids)}
+    except Exception as e:
+        # this would be bad, need to have the above as atomic as possible.
+        log.error(e)
+        if "An error occurred (ConditionalCheckFailedException)" in str(e):
+            # this means we couldn't update the enrolment table with the claim
+            pass
+        raise LambdaError(400, {'result': 'failure', 'exception': [str(e), repr(e)]})
 
 
 @post_common
@@ -328,10 +379,10 @@ MEMBERSHIP_APG_ABI = [{"anonymous": False, "inputs": [
     {"indexed": True, "internalType": "address", "name": "proposer", "type": "address"}], "name": "NewProposal",
                                                                                 "type": "event"}, {"anonymous": False,
                                                                                                    "inputs": [{
-                                                                                                                  "indexed": False,
-                                                                                                                  "internalType": "address",
-                                                                                                                  "name": "_operator",
-                                                                                                                  "type": "address"}],
+                                                                                                       "indexed": False,
+                                                                                                       "internalType": "address",
+                                                                                                       "name": "_operator",
+                                                                                                       "type": "address"}],
                                                                                                    "name": "OperatorAdded",
                                                                                                    "type": "event"},
                       {"anonymous": False, "inputs": [
@@ -453,7 +504,8 @@ def mk_weighting_allocation(w3, my_addr, to_addr, group, weight):
     log.info(f'mk_weighting_allocation: {w3}, {repr(my_addr)}, {repr(to_addr)}, {repr(group)}, {repr(weight)}')
     membership_addr = lookup_group_contract(group)
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_APG_ABI)
-    tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction({'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
+    tx = c.functions.setMember(to_addr, weight, 1572526800, 1604149200).buildTransaction(
+        {'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
 
     return tx
 

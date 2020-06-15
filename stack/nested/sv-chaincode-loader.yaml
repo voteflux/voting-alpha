@@ -138,6 +138,10 @@ Resources:
           Type: calltx
           Function: $apg-voting-alpha.initAddOperator
           Inputs: [ '^self' ]
+        - Name: apg-va-self-mbr
+          Type: calltx
+          Function: $agp-voting-alpha.operatorAddMember
+          Inputs: [ 'cfn-member', '^self' ]
 
 
   rChaincodeLambda:

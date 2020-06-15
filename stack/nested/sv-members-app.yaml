@@ -51,6 +51,9 @@ Parameters:
 
   pHashSalt:
     Type: String
+
+  pApgVotingAlphaAddr:
+    Type: String
     
 
 Conditions:
@@ -122,6 +125,7 @@ Resources:
           pEthHost: !Ref pEthHost
           SesConfigurationSetName: !Ref pSesConfigurationSetName
           pHashSalt: !Ref pHashSalt
+          pApgVotingAlphaAddr: !Ref pApgVotingAlphaAddr
       Handler: api.handlers.handle_quickchain_upgrade
       Runtime: python3.7
       Layers:

@@ -30,7 +30,6 @@ def create_ballots(**kwargs):
 
         voting_alpha_sc_abi = json.loads(load_sc('apguerrera/VotingAlpha.abi.json'))
         ix = w3.eth.contract(abi=voting_alpha_sc_abi, address=ix_address)
-        ix.functions()
 
     ssm = boto3.client('ssm')
 
