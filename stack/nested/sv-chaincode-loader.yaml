@@ -17,6 +17,9 @@ Parameters:
     Default: ''
   pLambdaLayer:
     Type: String
+  pArtifactsBucket:
+    Type: String
+    Default: ''
 
 
 
@@ -37,6 +40,7 @@ Resources:
       ServiceToken: !GetAtt rChaincodeLambda.Arn
       pNamePrefix: !Ref pNamePrefix
       pPublicNodeDomain: !Ref pPublicNodeDomain
+      pS3Location: !Sub rStaticBucketCleanupLambda
       pSmartContracts:
         - Name: membership
           Type: deploy
@@ -81,7 +85,7 @@ Resources:
           Type: calltx
         - Name: erc20-balance-proxy
           Type: deploy
-          Output: Erc20BalanceProxyAddr
+          Output: Erc20BalProxyAddr
         - Name: ix-mk-democ
           Function: $sv-index.dInit
           Value: 1
@@ -129,17 +133,15 @@ Resources:
           Value: 1200000000000000000000
         - Name: apg-voting-alpha
           Type: deploy
-          Output: ApgVotingAlphaAddr
+          Output: ApgVAAddr
         - Name: apg-voting-alpha-init
           Type: calltx
           Function: $apg-voting-alpha.initVotingAlpha
           Inputs: []
-          Outputs: ApgVotingAlphaInitTxid
         - Name: apg-voting-alpha-self-operator
           Type: calltx
           Function: $apg-voting-alpha.initAddOperator
           Inputs: [ '^self' ]
-          Outputs: ApgVotingAlphaSelfOperator
 
 
   rChaincodeLambda:
@@ -188,7 +190,7 @@ Outputs:
     Value: !GetAtt rChaincodeCr.BBFarmAux2Addr
   oTokenAbbrLookupAddr:
     Value: !GetAtt rChaincodeCr.TokenAbbrLookupAddr
-  oErc20BalanceProxyAddr:
-    Value: !GetAtt rChaincodeCr.Erc20BalanceProxyAddr
+  oErc20BalProxyAddr:
+    Value: !GetAtt rChaincodeCr.Erc20BalProxyAddr
   oApgVotingAlphaAddr:
-    Value: !GetAtt rChaincodeCr.ApgVotingAlphaAddr
+    Value: !GetAtt rChaincodeCr.ApgVAAddr

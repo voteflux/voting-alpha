@@ -850,9 +850,9 @@ Outputs:
   oTokenAbbrLookupAddr:
     Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oTokenAbbrLookupAddr
-  oErc20BalanceProxyAddr:
+  oErc20BalProxyAddr:
     Condition: cCreateChaincodeStack
-    Value: !GetAtt rChaincodeStack.Outputs.oErc20BalanceProxyAddr
+    Value: !GetAtt rChaincodeStack.Outputs.oErc20BalProxyAddr
 
   oApiUrl:
     Value: !Sub "https://${rApiBootstrapStack.Outputs.oApiDomain}/"

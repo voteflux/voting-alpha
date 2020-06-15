@@ -93,7 +93,7 @@ def wrap_handler(_handler):
         try:
             LOGGER.info('REQUEST RECEIVED:\n %s', event)
             LOGGER.info('REQUEST RECEIVED:\n %s', context)
-            LOGGER.info(event['RequestType'])
+            LOGGER.info(event)
             resp: CrResponse = _handler(event, context, **event['ResourceProperties'])
             signal.alarm(0)
             if type(resp) != CrResponse:

@@ -49,8 +49,8 @@ def mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr, weight=1):
 
 @post_common
 async def handle_quickchain_upgrade(event, ctx, msg):
-    def signup():
-        to_addr = msg["voterAddress"]
+    def signup(pl):
+        to_addr = pl["signup"]
         finished_web3 = False
         # setup
         try:
@@ -106,15 +106,22 @@ async def handle_quickchain_upgrade(event, ctx, msg):
                 pass
             raise LambdaError(400, {'result': 'failure', 'exception': [str(e), repr(e)]})
 
-    def ballot_publish():
+    def ballot_publish(pl):
         raise LambdaError(421, {"result": "soz, not impl yet"})
 
-    return ({
-        "signup": signup,
-        "ballot_publish": ballot_publish()
-    })[msg["method"]]
+    try:
+        log.info(f"Got msg >>: {json.dumps(msg)}")
+        params = msg["params"]
 
-
+        return (({
+            "signup": signup,
+            "ballot_publish": ballot_publish
+        }).get(msg["method"]))(params)
+    except Exception as e:
+        e_str = str(e)
+        log.error(e_str)
+        import traceback
+        log.error(traceback.extract_tb(e.__traceback__))
 
 
 @post_common

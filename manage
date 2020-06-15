@@ -32,6 +32,7 @@ state = tracker.read()
 
 from attrdict import AttrDict, AttrDefault
 from colorama import init, Fore, Back, Style
+
 init()
 
 from blessed import Terminal
@@ -49,8 +50,10 @@ from boto3.s3.transfer import S3Transfer
 
 import click
 
+
 def get_env(name, default):
     return os.environ.get(name, default)
+
 
 S3_DEV_BUCKET = get_env("S3_DEV_BUCKET", get_env("S3_CFN_SUPPORT_BUCKET", "flux-voting-app-dev-public-assets"))
 STACK_TMPL = "./stack/flux-securevote-voting-stack.yaml"
@@ -87,8 +90,8 @@ def must_run(cmd, silent=False):
     err = subprocess.STDOUT
     if silent:
         # disable silent for now
-        out = subprocess.PIPE # open('tmp-cmd-stdout', 'w')
-        err = subprocess.STDOUT # open('tmp-cmd-stderr', 'w')
+        out = subprocess.PIPE  # open('tmp-cmd-stdout', 'w')
+        err = subprocess.STDOUT  # open('tmp-cmd-stderr', 'w')
     if type(cmd) is list:
         to_run = cmd
     elif type(cmd) is str:
@@ -151,7 +154,8 @@ def get_stack_details(stack_name):
 
 
 def get_stack_resource(stack_name, logical_resource_name):
-    return cfn.describe_stack_resource(StackName=stack_name, LogicalResourceId=logical_resource_name)['StackResourceDetail']
+    return cfn.describe_stack_resource(StackName=stack_name, LogicalResourceId=logical_resource_name)[
+        'StackResourceDetail']
 
 
 def is_in_prog(stack_name):
@@ -249,7 +253,8 @@ def cfn_outputs_to_dict(outputs):
     return {d['OutputKey']: d['OutputValue'] for d in outputs}
 
 
-def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start: datetime = None, parent=None, max_old=5):
+def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_start: datetime = None, parent=None,
+                                        max_old=5):
     try:
         evts = cfn.describe_stack_events(StackName=stack_name)['StackEvents']
     except ClientError as e:
@@ -294,15 +299,16 @@ def _cfn_stack_extract_resources_status(stack_name, recursive=False, update_star
         # t_plus_seconds = (evt['Timestamp'] - update_start).total_seconds()
         seconds_ago = (datetime.now(timezone.utc) - evt['Timestamp']).total_seconds()
         resources[r_name] = r = AttrDict({'status': evt['ResourceStatus'],
-                                 'ts': colors('dim_white')("   (old)") if is_old else f"{seconds_ago:>3.0f}s ago",
-                                 'reason': evt.get('ResourceStatusReason', '<MISSING>'),
-                                 'type': evt.get('ResourceType', ""),
-                                 # we always want to show stacks, so they're never "old"
-                                 'is_old': is_old,
-                                 'parent': parent or "<Root>",
-                                 'evt': evt,
-                                 'depth': 0 if is_root else 1
-                                 })
+                                          'ts': colors('dim_white')(
+                                              "   (old)") if is_old else f"{seconds_ago:>3.0f}s ago",
+                                          'reason': evt.get('ResourceStatusReason', '<MISSING>'),
+                                          'type': evt.get('ResourceType', ""),
+                                          # we always want to show stacks, so they're never "old"
+                                          'is_old': is_old,
+                                          'parent': parent or "<Root>",
+                                          'evt': evt,
+                                          'depth': 0 if is_root else 1
+                                          })
         # n_old = len(list(filter(lambda k: resources[k]['is_old'] and resources[k]['parent'] == stack_name, resources)))
         if is_stack or not r['is_old'] or n_old_counter < max_old:
             _res_ord.insert(0, r_name)
@@ -335,6 +341,7 @@ def get_c(cs, name: str) -> str:
 def colors(fore='reset', back='reset', prefix='', suffix=''):
     def mk_colorful(msg):
         return f"{get_c(Fore, fore)}{get_c(Back, back)}{prefix}{msg}{suffix}{Fore.RESET}{Back.RESET}{Style.RESET_ALL}"
+
     return mk_colorful
 
 
@@ -416,7 +423,8 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
             while is_in_prog(stack_name):
                 loop_counter += 1
                 try:
-                    resources, _resources_order, _update_start = _cfn_stack_extract_resources_status(stack_name, recursive=True)
+                    resources, _resources_order, _update_start = _cfn_stack_extract_resources_status(stack_name,
+                                                                                                     recursive=True)
                 except ClientError as e:
                     if 'does not exist' in str(e):
                         echo(f"ClientError: {str(e)}")
@@ -424,7 +432,8 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                     raise e
                 clear_term()
                 stdscr_height, stdscr_width = term.height, term.width
-                addstr(0, 0, gen_heading(_update_start)) # + f" | update started: {_update_start.strftime('%H:%M:%S')}")
+                addstr(0, 0,
+                       gen_heading(_update_start))  # + f" | update started: {_update_start.strftime('%H:%M:%S')}")
                 l_num = 1
                 # max_depth = max([s.count('/') for s in _resources_order])
                 # last_depth = 0
@@ -466,7 +475,8 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                         # end_char = ("┬" if depth > 0 else "├") if "::Stack" in _r['type'] else " "
                         prefix = " " if _r['is_old'] else \
                             (gen_progress_rotate(loop_counter) if "IN_PROGRESS" in _r['status'] else "✔")
-                        prefix += ("┆ " if depth > 1 else "") + "  " * (depth-2) + (f"{start_char}─" if depth > 0 else "")
+                        prefix += ("┆ " if depth > 1 else "") + "  " * (depth - 2) + (
+                            f"{start_char}─" if depth > 0 else "")
                         prefix += end_char
                         # prefix += colors('red')(f"[{rs_left:>2d}]")
 
@@ -477,7 +487,8 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                             the_str = the_str + ' ' + colors('dim_cyan')("." * (stdscr_width - total_len))
                         else:
                             max_len = (stdscr_width - 2 - true_len(type_msg))
-                            the_str = filter(lambda s: true_len(s) <= max_len, [the_str[:i] for i in range(len(the_str))][::-1]).__next__()
+                            the_str = filter(lambda s: true_len(s) <= max_len,
+                                             [the_str[:i] for i in range(len(the_str))][::-1]).__next__()
                             the_str += "…" + Fore.RESET + Back.RESET + Style.RESET_ALL
                         the_str += ' ' + colors('cyan')(fmt_type(_r))
                         addstr(l_num, 0, the_str)  # [:max_str_len]
@@ -491,7 +502,8 @@ def stream_cfn_events(stack_name, heading_prefix=None, skip_old=False, fullscree
                     l_num += 1
                 time.sleep(2)
 
-            addstr(1, 0, f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
+            addstr(1, 0,
+                   f"----------- STACK ({stack_name}) COMPLETED! ----------- In Progress: {is_in_prog(stack_name)}")
             time.sleep(1.5)
         except Exception as e:
             logger.error(f"Error in CFN stream: {e}, {repr(e)}")
@@ -566,7 +578,8 @@ def docker_lambda(cmd, extra_args=''):
     #     'AWS_SECRET_ACCESS_KEY': session_token['SecretAccessKey'],
     # }.items()])
     env_args = ''
-    return os.system(f'docker run --rm -t -v "{mnt_dir}":/var/task {env_args} {extra_args} lambci/lambda:build-python3.6 {cmd}')
+    return os.system(
+        f'docker run --rm -t -v "{mnt_dir}":/var/task {env_args} {extra_args} lambci/lambda:build-python3.6 {cmd}')
 
 
 @click.group()
@@ -585,13 +598,13 @@ def cli(debug, offset, region):
     s3 = boto3.client('s3', **cfn_extras)
 
 
-
 py_targets_raw = ["cr", "members"]
 py_targets = click.Choice(py_targets_raw + ['all'])
 
 
 @cli.command(name='pip')
-@click.argument('target', default="all", type=py_targets) #, help="The target python app to install deps for; with 'all' being all targets")
+@click.argument('target', default="all",
+                type=py_targets)  # , help="The target python app to install deps for; with 'all' being all targets")
 @click.argument('pkgs', nargs=-1)
 @click.option('--no-system', type=click.BOOL, is_flag=True, default=False,
               help="do not include --system in pip install args")
@@ -636,7 +649,7 @@ def _pip(target_path, pkgs, no_system, pip_args, use_docker):
         _ec = os.system(pip_cmd)
 
         if _ec != 0:
-           raise Exception("Failed to install packages")
+            raise Exception("Failed to install packages")
         print_output(f"Installed packages {pkgs} / {reqs} to {target_path}")
     else:
         raise Exception("Target of {} is unknown".format(target_path))
@@ -764,7 +777,7 @@ def destroy(ctx, watch, stack_name):
 
 
 def _step_to_parameters(step: int):
-    steps = [ {'pCreateNodes': 'false'}, {'pCreateChaincodeStack': 'false'}, {'pCreateMembersApp': 'false'}, {} ]
+    steps = [{'pCreateNodes': 'false'}, {'pCreateChaincodeStack': 'false'}, {'pCreateMembersApp': 'false'}, {}]
     return steps[step]
 
 
@@ -781,11 +794,11 @@ def _step_to_parameters(step: int):
               help="use tmp-stack.yaml if it exists instead of running aws cfn package")
 @click.option("--use-last-uploaded", default=False, is_flag=True, type=click.BOOL,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
-@click.option("--step", default=3, type=click.IntRange(0, 3), help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
+@click.option("--step", default=3, type=click.IntRange(0, 3),
+              help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
 @click.pass_context
 def deploy(ctx, stack_name, deploy, open_browser, del_packaged_tmpl, watch, ssh_key, use_existing,
-                use_last_uploaded, step):
-
+           use_last_uploaded, step):
     raise Exception('deprecated')
 
     if stack_name == '':
@@ -888,9 +901,10 @@ def get_ns_details(sn, r_name):
         raise Exception(f"Cannot find nested stack with name {r_name} in main stack {sn}")
     with open(STACK_TMPL, 'r') as f:
         contents = f.read()
-        results = re.search(f"{r_name}:[\n\s]*Type: AWS::CloudFormation::Stack[\n\s\w:]*TemplateURL:(.*)\.yaml", contents, re.M | re.S)
+        results = re.search(f"{r_name}:[\n\s]*Type: AWS::CloudFormation::Stack[\n\s\w:]*TemplateURL:(.*)\.yaml",
+                            contents, re.M | re.S)
         ns_file_path = results.group(1) + ".yaml"
-    return { 'arn': ns_arn, 'file_path': os.path.join('./stack', ns_file_path) }
+    return {'arn': ns_arn, 'file_path': os.path.join('./stack', ns_file_path)}
 
 
 def default_params_from_env(env_name, evs):
@@ -912,7 +926,7 @@ def default_params_from_env(env_name, evs):
         # 'pDeployAcmAutovalidate': 'false',
         # 'Nonce': str(int(time.time()))
     }
-    params.update({ 'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY)})  #  if env_name != "prod" else ''
+    params.update({'SSHKey': evs.get("SSH_KEY", MAXS_SSH_KEY)})  # if env_name != "prod" else ''
 
     return params
 
@@ -950,15 +964,22 @@ def watch_env(env_name, no_fullscreen):
 @click.argument('env-name', type=click.STRING, default='dev')
 @click.option("--nested-stack", "-ns", type=click.STRING, help="The resource name of the nested stack to update")
 @click.option("--watch/--no-watch", default=True, is_flag=True, help="Stream CFN events as it deploys.")
-@click.option("--set-params", type=click.STRING, help="JSON encoded parameters. New values will be set these params, and existing values will be removed from the cache.")
-@click.option("--update-params", type=click.STRING, help="JSON encoded parameters. New values will be set _only_ on these params, and existing values will be used for existing params.")
+@click.option("--set-params", type=click.STRING,
+              help="JSON encoded parameters. New values will be set these params, and existing values will be removed from the cache.")
+@click.option("--update-params", type=click.STRING,
+              help="JSON encoded parameters. New values will be set _only_ on these params, and existing values will be used for existing params.")
 @click.option("--pkg-python/--no-pkg-python", default=True)
 @click.option("--use-last-uploaded", default=False, is_flag=True,
               help="do not package a new template, just redeploy the last one uploaded to S3.")
 @click.option("--no-fullscreen", default=False, is_flag=True)
-@click.option("--step", default=3, type=click.IntRange(0, 3), help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and more resources as you increase step. The default is to deploy everything.")
+@click.option("--step", default=3, type=click.IntRange(0, 3),
+              help="Proceed only to step N of the stack deployment. The stack will _progressively_ deploy more and " + \
+                   "more resources as you increase step. The default is to deploy everything. Step 0: base " + \
+                   "resources. Step 1: +nodes. Step 2: +chaincode. Step 3: +memberApp. " + \
+                   "Step 4: everything (+loadBalancer)")
 @click.pass_context
-def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded, no_fullscreen, step):
+def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_python, use_last_uploaded,
+             no_fullscreen, step):
     _update_params = {} if not update_params else json.loads(update_params)
     if set_params and _update_params:
         raise Exception("Cannot set and update params at the same time. Use one.")
@@ -981,7 +1002,8 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     except Exception as e:
         logger.debug(f"Getting bucket ({evs.S3_CFN_SUPPORT_BUCKET}) ACL failed: {e}. Trying to create bucket.")
         try:
-            s3.create_bucket(Bucket=evs.S3_CFN_SUPPORT_BUCKET, CreateBucketConfiguration={'LocationConstraint': evs.AWS_DEFAULT_REGION})
+            s3.create_bucket(Bucket=evs.S3_CFN_SUPPORT_BUCKET,
+                             CreateBucketConfiguration={'LocationConstraint': evs.AWS_DEFAULT_REGION})
             logging.debug(f"Created bucket {evs.S3_CFN_SUPPORT_BUCKET}")
         except Exception as e:
             logger.debug(f"Creation of bucket ({evs.S3_CFN_SUPPORT_BUCKET}) failed: {e}")
@@ -989,7 +1011,8 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
     if not use_last_uploaded:
         must_run("aws cloudformation package --template-file {} --s3-bucket {} --output-template-file {}"
                  .format(evs.STACK_TEMPLATE, evs.S3_CFN_SUPPORT_BUCKET, tmp_template_filename), silent=True)
-        s3_tfer.upload_file(tmp_template_filename, evs.S3_CFN_SUPPORT_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
+        s3_tfer.upload_file(tmp_template_filename, evs.S3_CFN_SUPPORT_BUCKET, obj_key,
+                            extra_args={'ACL': 'public-read'})
 
     obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, evs.S3_CFN_SUPPORT_BUCKET, obj_key)
     print(f"Template URL: {obj_url}")
@@ -1081,7 +1104,7 @@ def sync_lambda(env_name, resource_name, nested, upload_layers=False):
     env_name = get_env_name(env_name)
     evs = get_evs(env_name)
     root_tmpl_path = Path(evs.STACK_TEMPLATE).resolve()
-    tmpls = [ (root_tmpl_path.parent, evs.STACK_NAME, cfn_tools.load_yaml(root_tmpl_path.read_text())) ]
+    tmpls = [(root_tmpl_path.parent, evs.STACK_NAME, cfn_tools.load_yaml(root_tmpl_path.read_text()))]
 
     for ns_logical_name in nested:
         (last_path, last_name, last_stack) = tmpls[-1]
@@ -1103,7 +1126,8 @@ def sync_lambda(env_name, resource_name, nested, upload_layers=False):
 
     print(lambda_path, lambda_code_uri, lambda_res)
 
-    layers = [] if not upload_layers or 'Layers' not in lambda_res else [ final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers'] ]
+    layers = [] if not upload_layers or 'Layers' not in lambda_res else [
+        final_tmpl_dir / final_tmpl['Resources'][l['Ref']]['Properties']['ContentUri'] for l in lambda_res['Layers']]
     tmp_zip = package_lambda(resource_name, lambda_path, layers)
 
     with open(f'./{tmp_zip}', 'rb') as f:
@@ -1138,7 +1162,7 @@ script_info = {
         },
         'function': '_setup_member_classes',
         'click_f': 'setup_member_classes',
-        'args': [('oWeb3Provider', 'cfn'), ('oErc20BalanceProxyAddr', 'cfn')]
+        'args': [('oWeb3Provider', 'cfn'), ('oErc20BalProxyAddr', 'cfn')]
     },
     'sendCoins': {
         'module': 'stack.app.members.api.scripts.sendCoins',
@@ -1315,7 +1339,7 @@ def gen_cmd(_script, _script_name, _script_params):
 
         kwargs.update(generated_opts)
 
-        script_module = importlib.import_module(_script['module']) # importlib.import_module(script['module'])
+        script_module = importlib.import_module(_script['module'])  # importlib.import_module(script['module'])
         ctx.invoke(getattr(script_module, _script['click_f']), **kwargs)
 
     generatable_opts = list([a[0] for a in _script.get('args', [])])
@@ -1370,7 +1394,7 @@ VUE_APP_CHAINSPEC_URL={outputs.oChainSpecUrl}
 
 ## ELM
 
-MAIN_TITLE="Blockchain Australia AGM Resolutions and Elections{' ('+env_name+')' if env_name != 'prod' else ''}"
+MAIN_TITLE="Blockchain Australia AGM Resolutions and Elections{' (' + env_name + ')' if env_name != 'prod' else ''}"
 DEV={'true' if env_name == 'dev' else 'false'}
 DEMOC_HASH={outputs.oDemocHash}
 INDEX_ADDR={outputs.oIndexAddr}
@@ -1389,17 +1413,18 @@ MEMBER_GROUPS_JSON='{json.dumps(voter_group_to_scs[env_name])}'
 voter_group_to_scs = {
     'dev': {"main": ""},
     'devOld': {"EX,SCALE,CORP": "0xD0237d3a126880Aaadfe3c83b96Ce87267B76F8d",
-            "EX": "0xD6BD84320FDb4BB797f910fbb78Fda4737Fe355F", "SCALE": "0x91f64c36E3ed2728Dc3c02Dc66891DD35BCebA9C",
-            "CORP": "0xbFB3fc489A4a5dEf84480A5bfc3df0a82FaA8B29",
-            "FELLOW": "0xcB5993006192654b53802Eb0A308b1fFea9FEb32", "IND": "0x2F7DD97398267C51741cF123747ADbE22566BCb8",
-            "STUD": "0x23F11d26028C4343C8E49487F7db3f87A752296d"},
+               "EX": "0xD6BD84320FDb4BB797f910fbb78Fda4737Fe355F",
+               "SCALE": "0x91f64c36E3ed2728Dc3c02Dc66891DD35BCebA9C",
+               "CORP": "0xbFB3fc489A4a5dEf84480A5bfc3df0a82FaA8B29",
+               "FELLOW": "0xcB5993006192654b53802Eb0A308b1fFea9FEb32",
+               "IND": "0x2F7DD97398267C51741cF123747ADbE22566BCb8",
+               "STUD": "0x23F11d26028C4343C8E49487F7db3f87A752296d"},
     'prod': {"EX,SCALE,CORP": "0x012a9Db1184C054Ad933aD6A951d925a0004Df8b",
              "EX": "0x28F56525a76eF47e95b856927A29f1C21AeA463d", "SCALE": "0x99F15F49E5E88295Ef5e1aE8daCE6709cCCC01Ec",
              "CORP": "0x60F7C513eCe7AFD2BD95ffc218a8c0Ac34E989a9",
              "FELLOW": "0xf646789fCe64761008e67026c2045308751E52bc",
              "IND": "0x722871602A99c01Effafc29F88EB59d8a36Ac9FE", "STUD": "0x446bd9Ac0abFfb3F3574C2287066616A6B0a0181"}
 }
-
 
 # monkey patch so usage output looks nicer
 sys.argv[0] = './manage'
