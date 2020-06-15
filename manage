@@ -614,7 +614,7 @@ py_targets = click.Choice(py_targets_raw + ['all'])
 def pip(target, pkgs, no_system, pip_args, use_docker):
     targets = py_targets_raw if target == "all" else [target]
     _pkgs = list(pkgs)
-    target_paths = [{'cr': 'stack/cr/common'}[target] for target in targets]
+    target_paths = [{'cr': 'stack/cr', 'members': 'stack/app/members'}[target] for target in targets]
     for target_path in target_paths:
         _pip(target_path, _pkgs, no_system, pip_args, use_docker)
 

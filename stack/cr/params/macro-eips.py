@@ -7,7 +7,7 @@ logger.setLevel(logging.DEBUG)
 
 import bootstrap
 
-from cfnwrapper import *
+from common import *
 
 
 @wrap_macro

@@ -1,0 +1,7 @@
+pymonad
+pynamodb
+attrdict
+pyjwt
+lambda_decorators
+six
+toolz
