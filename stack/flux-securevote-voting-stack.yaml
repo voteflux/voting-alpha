@@ -560,13 +560,13 @@ Resources:
       Policies: []
 
 
-  rVpcStack:
-    Type: AWS::Cloudformation::Stack
-    Condition: cCreateMembersApp
-    Properties:
-      TemplateURL: ./nested/vendor/vpc-3azs.yaml
-      Parameters:
-        ClassB: 13
+#  rVpcStack:
+#    Type: AWS::Cloudformation::Stack
+#    Condition: cCreateMembersApp
+#    Properties:
+#      TemplateURL: ./nested/vendor/vpc-3azs.yaml
+#      Parameters:
+#        ClassB: 13
 
 
 #  rVpc:
@@ -767,19 +767,19 @@ Resources:
 #      Name: !Sub ${NamePrefix}-member-email-deliveries
 
 
-  rPublicLoadBalancer:
-    Type: AWS::CloudFormation::Stack
-    Condition: cCreateAlb
-    Properties:
-      TemplateURL: ./nested/sv-public-alb.yaml
-      Parameters:
-        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
-        pNamePrefix: !Ref NamePrefix
-        pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
-        pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
-        pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
-        pVpcId: !GetAtt rVpcStack.Outputs.VPC
-        pSubnets: !GetAtt rVpcStack.Outputs.SubnetsPublic
+#  rPublicLoadBalancer:
+#    Type: AWS::CloudFormation::Stack
+#    Condition: cCreateAlb
+#    Properties:
+#      TemplateURL: ./nested/sv-public-alb.yaml
+#      Parameters:
+#        pPublicIps: !GetAtt rPublicNodeEips.Outputs.oPublicIps
+#        pNamePrefix: !Ref NamePrefix
+#        pCertificateArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
+#        pPublicNode0: !GetAtt rPublicNode0.Outputs.oInstanceId
+#        pPublicNode1: !GetAtt rPublicNode1.Outputs.oInstanceId
+#        pVpcId: !GetAtt rVpcStack.Outputs.VPC
+#        pSubnets: !GetAtt rVpcStack.Outputs.SubnetsPublic
 
   # rAlbDomain:
   #   Type: AWS::Route53::RecordSet

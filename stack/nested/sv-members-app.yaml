@@ -122,7 +122,7 @@ Resources:
           pEthHost: !Ref pEthHost
           SesConfigurationSetName: !Ref pSesConfigurationSetName
           pHashSalt: !Ref pHashSalt
-      Handler: api.handlers.message_handler
+      Handler: api.handlers.handle_quickchain_upgrade
       Runtime: python3.7
       Layers:
         - !Ref pLambdaLayer
@@ -132,7 +132,7 @@ Resources:
         web:
           Type: Api
           Properties:
-            Path: /register
+            Path: /api
             Method: post
             RestApiId: !Ref rMembersOnboardApi
       Policies:

@@ -904,8 +904,9 @@ def default_params_from_env(env_name, evs):
         'Subdomain': evs.SUBDOMAIN,
         'AdminEmail': evs.get('EMAIL_FROM_ADDR', 'test-stack-flux-vote@xk.io'),
         'pDeployMacros': 'false',
-        'pCreateAlb': 'true',
-        'pVoterGroupToAddressMapJson': "{}", # todo: figure out if there are any liabilities from cutting it out in this way # json.dumps(voter_group_to_scs[env_name]),
+        'pCreateAlb': 'false',
+        # todo: figure out if there are any liabilities from cutting it out in this way # json.dumps(voter_group_to_scs[env_name]),
+        'pVoterGroupToAddressMapJson': json.dumps(voter_group_to_scs[env_name]),
         'pMemberEmailDeliveryNotificationEmail': evs.get('NOTIFICATION_EMAIL', 'not@real.addressBlah18975kjdfng'),
         'pHashSalt': evs.get('PRIV_FAILING_EMAIL_SALT', os.urandom(10).hex()),
         # 'pDeployAcmAutovalidate': 'false',
@@ -1378,11 +1379,16 @@ ARCHIVE_PUSH_API_KEY=UmNrB7cifZ2N1LlnyM4RXK1xuK2VpIQaamgmlSBb
 WEB3_PROVIDER={outputs.oWeb3Provider}
 MEMBER_GROUPS_JSON='{json.dumps(voter_group_to_scs[env_name])}'
 
+## OUTPUTS
+
+{json.dumps(outputs, indent=2)}
+
 """)
 
 
 voter_group_to_scs = {
-    'dev': {"EX,SCALE,CORP": "0xD0237d3a126880Aaadfe3c83b96Ce87267B76F8d",
+    'dev': {"main": ""},
+    'devOld': {"EX,SCALE,CORP": "0xD0237d3a126880Aaadfe3c83b96Ce87267B76F8d",
             "EX": "0xD6BD84320FDb4BB797f910fbb78Fda4737Fe355F", "SCALE": "0x91f64c36E3ed2728Dc3c02Dc66891DD35BCebA9C",
             "CORP": "0xbFB3fc489A4a5dEf84480A5bfc3df0a82FaA8B29",
             "FELLOW": "0xcB5993006192654b53802Eb0A308b1fFea9FEb32", "IND": "0x2F7DD97398267C51741cF123747ADbE22566BCb8",

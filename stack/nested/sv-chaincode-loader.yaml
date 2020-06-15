@@ -127,6 +127,20 @@ Resources:
           Type: calltx
           Inputs: [ $democ-hash ]
           Value: 1200000000000000000000
+        - Name: apg-voting-alpha
+          Type: deploy
+          Output: ApgVotingAlphaAddr
+        - Name: apg-voting-alpha-init
+          Type: calltx
+          Function: $apg-voting-alpha.initVotingAlpha
+          Inputs: []
+          Outputs: ApgVotingAlphaInitTxid
+        - Name: apg-voting-alpha-self-operator
+          Type: calltx
+          Function: $apg-voting-alpha.initAddOperator
+          Inputs: [ '^self' ]
+          Outputs: ApgVotingAlphaSelfOperator
+
 
   rChaincodeLambda:
     Type: AWS::Serverless::Function
@@ -176,3 +190,5 @@ Outputs:
     Value: !GetAtt rChaincodeCr.TokenAbbrLookupAddr
   oErc20BalanceProxyAddr:
     Value: !GetAtt rChaincodeCr.Erc20BalanceProxyAddr
+  oApgVotingAlphaAddr:
+    Value: !GetAtt rChaincodeCr.ApgVotingAlphaAddr
