@@ -748,7 +748,7 @@ Resources:
         pNamePrefix: !Ref NamePrefix
         pApiDomainRaw: !Sub ${Subdomain}.${HostedZoneDomain}
         pEthHost: !Sub http://${rPublicNode0.Outputs.oPublicIp}:8545
-        pMembershipContract: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
+        pMembershipContract: !GetAtt rChaincodeStack.Outputs.oMbrsAddr
         pCertArn: !GetAtt rAcmCertStack.Outputs.oCertificateArn
         pApiDomain: !GetAtt rApiBootstrapStack.Outputs.oApiDomain
         pApiStageName: svprod
@@ -829,15 +829,12 @@ Outputs:
 #     Value:
 #       Fn::GetAtt: ["EthereumCommonStack", "Outputs.EthJsonRPCURL"]
 
-  oMembershipAddr:
+  oMbrsAddr:
     Condition: cCreateChaincodeStack
-    Value: !GetAtt rChaincodeStack.Outputs.oMembershipAddr
+    Value: !GetAtt rChaincodeStack.Outputs.oMbrsAddr
   oDemocHash:
     Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oDemocHash
-  oMkDemocTxid:
-    Condition: cCreateChaincodeStack
-    Value: !GetAtt rChaincodeStack.Outputs.oMkDemocTxid
   oIndexAddr:
     Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oIndexAddr

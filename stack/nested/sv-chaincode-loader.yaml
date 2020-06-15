@@ -44,7 +44,7 @@ Resources:
       pSmartContracts:
         - Name: membership
           Type: deploy
-          Output: MembershipAddr
+          Output: MbrsAddr
         - Name: membership-add-admin
           Type: calltx
           Function: $membership.addAdmin
@@ -59,12 +59,10 @@ Resources:
           Output: BBFarmAddr
         - Name: sv-backend
           Type: deploy
-          Output: BackendAddr
         - Inputs:
             - ^self
           Name: sv-payments
           Type: deploy
-          Output: PaymentsAddr
         - Name: sv-comm-auction
           Type: deploy
         - Name: sv-index
@@ -85,13 +83,12 @@ Resources:
           Type: calltx
         - Name: erc20-balance-proxy
           Type: deploy
-          Output: Erc20BalProxyAddr
+          Output: Erc20BalPxAddr
         - Name: ix-mk-democ
           Function: $sv-index.dInit
           Value: 1
           Inputs: [ $erc20-balance-proxy, 'bool:true' ]
           Type: calltx
-          Output: MkDemocTxid
         - Name: ix-payments-perms
           Function: $sv-payments.setPermissions
           Inputs: [ $sv-index, 'bool:true' ]
@@ -110,7 +107,6 @@ Resources:
           Type: calltx
           Function: $sv-index.setDEditor
           Inputs: [ $democ-hash, _members, 'bool:true' ]
-          Output: DemocAddAdminTxid
         - Name: token-abbr-lookup
           Type: deploy
           Output: TokenAbbrLookupAddr
@@ -134,11 +130,11 @@ Resources:
         - Name: apg-voting-alpha
           Type: deploy
           Output: ApgVAAddr
-        - Name: apg-voting-alpha-init
+        - Name: apg-va-init
           Type: calltx
           Function: $apg-voting-alpha.initVotingAlpha
           Inputs: []
-        - Name: apg-voting-alpha-self-operator
+        - Name: apg-va-self-op
           Type: calltx
           Function: $apg-voting-alpha.initAddOperator
           Inputs: [ '^self' ]
@@ -174,23 +170,19 @@ Resources:
 
 
 Outputs:
-  oMembershipAddr:
-    Value: !GetAtt rChaincodeCr.MembershipAddr
+  oMbrsAddr:
+    Value: !GetAtt rChaincodeCr.MbrsAddr
   oDemocHash:
     Value: !GetAtt rChaincodeCr.DemocHash
-  oMkDemocTxid:
-    Value: !GetAtt rChaincodeCr.MkDemocTxid
   oIndexAddr:
     Value: !GetAtt rChaincodeCr.IndexAddr
   oBBFarmAddr:
     Value: !GetAtt rChaincodeCr.BBFarmAddr
-  oDemocAddAdminTxid:
-    Value: !GetAtt rChaincodeCr.DemocAddAdminTxid
   oBBFarmAux2Addr:
     Value: !GetAtt rChaincodeCr.BBFarmAux2Addr
   oTokenAbbrLookupAddr:
     Value: !GetAtt rChaincodeCr.TokenAbbrLookupAddr
   oErc20BalProxyAddr:
-    Value: !GetAtt rChaincodeCr.Erc20BalProxyAddr
+    Value: !GetAtt rChaincodeCr.Erc20BalPxAddr
   oApgVotingAlphaAddr:
     Value: !GetAtt rChaincodeCr.ApgVAAddr

@@ -19,8 +19,8 @@ from bootstrap import *
 
 from lib import *
 
-LOGGER = logging.getLogger()
-LOGGER.setLevel(logging.INFO)
+log = logging.getLogger()
+log.setLevel(logging.INFO)
 
 
 class CfnStatus(Enum):
@@ -43,9 +43,9 @@ def wrap_handler(_handler):
         # Setup alarm for remaining runtime minus a second
         signal.alarm((context.get_remaining_time_in_millis() // 1000) - 1)
         try:
-            LOGGER.info('REQUEST RECEIVED:\n %s', event)
-            LOGGER.info('REQUEST RECEIVED:\n %s', context)
-            LOGGER.info(event['RequestType'])
+            log.info('REQUEST RECEIVED:\n %s', event)
+            log.info('REQUEST RECEIVED:\n %s', context)
+            log.info(event['RequestType'])
             resp: CrResponse = _handler(event, context, **event['ResourceProperties'])
             if type(resp) != CrResponse:
                 raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
@@ -53,8 +53,8 @@ def wrap_handler(_handler):
         except Exception as e:
             traceback.print_exc()
             tb_str = traceback.format_exc()
-            LOGGER.info('FAILED!')
-            LOGGER.info("Exception: %s", repr(e))
+            log.info('FAILED!')
+            log.info("Exception: %s", repr(e))
             resource_id = event.get('PhysicalResourceId',
                                     "Unknown-PhysicalResourceId-{}".format(event['LogicalResourceId'])
                                     )
@@ -143,10 +143,10 @@ def handler_params(event: dict, context, **props):
         data = do_create(props)
         return CrResponse(CfnStatus.SUCCESS, data, physical_id)
     elif event['RequestType'] == 'Update':
-        LOGGER.info('UPDATE! (NULL)')
+        log.info('UPDATE! (NULL)')
         return CrResponse(CfnStatus.SUCCESS, {}, physical_id)
     elif event['RequestType'] == 'Delete':
-        LOGGER.info('DELETE!')
+        log.info('DELETE!')
         data = del_ssm_networkid_ethstats(**props)
         return CrResponse(CfnStatus.SUCCESS, data, physical_id)
     else:
@@ -180,8 +180,8 @@ def send_response(event, context, cfn_resp: CrResponse):
         resp_dict['Reason'] += "\n\nTraceback:\n" + response_data['Traceback']
     response_body = json.dumps(resp_dict).encode()
 
-    LOGGER.info('ResponseURL: %s', event['ResponseURL'])
-    LOGGER.info('ResponseBody: %s', response_body.decode())
+    log.info('ResponseURL: %s', event['ResponseURL'])
+    log.info('ResponseBody: %s', response_body.decode())
 
     opener = build_opener(HTTPHandler)
     request = Request(event['ResponseURL'], data=response_body)
@@ -189,8 +189,8 @@ def send_response(event, context, cfn_resp: CrResponse):
     request.add_header('Content-Length', len(response_body))
     request.get_method = lambda: 'PUT'
     response = opener.open(request)
-    LOGGER.info("Status code: %s", response.getcode())
-    LOGGER.info("Status message: %s", response.msg)
+    log.info("Status code: %s", response.getcode())
+    log.info("Status message: %s", response.msg)
 
 
 def timeout_handler(_signal, _frame):

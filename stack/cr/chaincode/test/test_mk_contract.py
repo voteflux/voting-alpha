@@ -108,6 +108,9 @@ def test_mk_contract():
         mk_calltx('ix-mk-democ', '$sv-index.dInit', ['$membership', 'bool:true'], value=1),
         mk_call('democ-hash', '$sv-backend.getGDemoc', [ 'uint256:0' ], [ 'bytes32' ]),
         mk_calltx('democ-add-admin', '$sv-index.setDEditor', ['$democ-hash', '_members', 'bool:true']),
+        mk_deploy('apg-voting-alpha'),
+        mk_calltx('apg-va-init', '$apg-voting-alpha.initVotingAlpha', []),
+        mk_calltx('apg-va-self-op', '$apg-voting-alpha.initAddOperator', []),
     ]
 
     # smart_contracts_to_deploy += smart_contracts_to_deploy

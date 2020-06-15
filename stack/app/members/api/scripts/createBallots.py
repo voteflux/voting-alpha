@@ -14,8 +14,8 @@ def create_ballots(**kwargs):
     import hashlib
 
     def _create_ballots(http_provider, ix_address, democ_hash):
-        priv_key = get_param("sv-{}-nodekey-service-{}".format(NAME_PREFIX, "publish"), WithDecryption=True)
-        print(NAME_PREFIX, priv_key)
+        key_name = "publish"
+        priv_key = get_param(f"sv-{NAME_PREFIX}-nodekey-service-{key_name}", WithDecryption=True)
         account = Account.privateKeyToAccount(priv_key)
         print('Loaded account w/ address:', account.address)
 
@@ -25,9 +25,12 @@ def create_ballots(**kwargs):
         w3 = Web3(Web3.HTTPProvider(http_provider))
         print('Balance:', w3.eth.getBalance(account.address))
 
-        ixAbi = json.loads(load_sc('SVLightIndex.abi.json'))
-        ix = w3.eth.contract(abi=ixAbi, address=ix_address)
-        # ix.functions.d
+        # ixAbi = json.loads(load_sc('SVLightIndex.abi.json'))
+        # ix = w3.eth.contract(abi=ixAbi, address=ix_address)
+
+        voting_alpha_sc_abi = json.loads(load_sc('apguerrera/VotingAlpha.abi.json'))
+        ix = w3.eth.contract(abi=voting_alpha_sc_abi, address=ix_address)
+        ix.functions()
 
     ssm = boto3.client('ssm')
 

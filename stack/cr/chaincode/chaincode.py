@@ -273,7 +273,7 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
 def get_bytecode(filepath) -> str:
     log.info(f"[get_bytecode] Opening bytecode from: {os.path.realpath(filepath)}")
     with open(filepath, 'r') as f:
-        bc = f.read()
+        bc = f.read().strip('\n')
     log.info(f"[get_bytecode] BC len: {len(bc)}")
     if bc[:2] != '0x':
         bc = '0x' + bc
@@ -387,7 +387,7 @@ def process_bytecode(w3, acct, raw_bc: str, prev_outs, inputs, func=None, libs=d
         '''Take inputs and process/pack them and add to end of bytecode.'''
         tx_res = {'data': _bc}
         _inputs = []
-        if len(inputs) > 0:
+        if len(inputs) > 0 or True:  # TODO: If this works for empty Inputs, remove condition
             abi = {'inputs': [{"name": f"_{i}", "type": _get_input_type(prev_outs, _input)} for (i, _input) in enumerate(inputs)]}
             abi.update({'payable': False, "stateMutability": "nonpayable", "constant": False})
             tx = {'gasPrice': 1, 'gas': 7500000}
@@ -514,7 +514,7 @@ def mk_contract(_name_prefix, w3, acct, chainid, nonce, dry_run=False):
 
             log.info(f"CallTx: {entry_name} - not cached")
             tx, _inputs = process_bytecode(w3, acct, '', _prevs, inputs, func=_next['Function'], sc_op=_next, dry_run=dry_run)
-            log.info(f"CallTx got from process_bytecode: {tx}")
+            log.info(f"CallTx got from process_bytecode: {tx}, {_inputs}")
 
             signed_tx, tx_id = send_raw_bump_nonce(w3, acct, tx)
             w3.eth.waitForTransactionReceipt(tx_id)

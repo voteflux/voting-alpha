@@ -11,3 +11,4 @@ _manager_cache.yaml
 .env.*
 .node-xml*
 *.priv
+.pytest_cache

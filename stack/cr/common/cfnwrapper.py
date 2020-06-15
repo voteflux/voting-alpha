@@ -18,10 +18,10 @@ main_dir = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, main_dir)
 sys.path.insert(0, os.path.join(main_dir, 'deps'))
 
-LOGGER = logging.getLogger("CfnWrap")
-LOGGER.setLevel(logging.INFO)
+log = logging.getLogger("CfnWrap")
+log.setLevel(logging.INFO)
 
-LOGGER.info(f"Path: {sys.path}")
+log.info(f"Path: {sys.path}")
 
 class CfnStatus(Enum):
     SUCCESS = "SUCCESS"
@@ -42,6 +42,12 @@ class CrResponse:
         self.data = data
         self.physical_id = physical_id
 
+    def __str__(self):
+        return json.dumps(dict(is_macro=self.is_macro, is_cr=self.is_cr, fragment=self.fragment, status=self.status,
+                               data=self.data, physical_id=self.physical_id),
+                          indent=2
+                          )
+
 
 def wrap_macro(_handler):
     """wrap a macro handler (lambda)"""
@@ -49,13 +55,13 @@ def wrap_macro(_handler):
         # Setup alarm for remaining runtime minus a second
         ms_remaining = context.get_remaining_time_in_millis()
         timeout_in_s = max((ms_remaining // 1000) - 1, 15)
-        LOGGER.debug(f'ms remaining: {ms_remaining}')
-        LOGGER.debug(f'timing out in seconds: {timeout_in_s} (min 15s)')
+        log.debug(f'ms remaining: {ms_remaining}')
+        log.debug(f'timing out in seconds: {timeout_in_s} (min 15s)')
         signal.alarm(timeout_in_s)
         def run():
             try:
-                LOGGER.info('REQUEST RECEIVED:\n %s', event)
-                LOGGER.info('REQUEST RECEIVED:\n %s', context)
+                log.info('REQUEST RECEIVED:\n %s', event)
+                log.info('REQUEST RECEIVED:\n %s', context)
                 resp: CrResponse = _handler(event, context, **event['templateParameterValues'])
                 if type(resp) != CrResponse:
                     raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
@@ -69,9 +75,9 @@ def wrap_macro(_handler):
             except Exception as e:
                 traceback.print_exc()
                 tb_str = traceback.format_exc()
-                LOGGER.info('FAILED!')
-                LOGGER.info("Exception: %s", repr(e))
-                LOGGER.error(tb_str)
+                log.info('FAILED!')
+                log.info("Exception: %s", repr(e))
+                log.error(tb_str)
                 return {
                     "requestId": event['requestId'],
                     "status": CfnStatus.FAILED.value,
@@ -91,19 +97,21 @@ def wrap_handler(_handler):
         # Setup alarm for remaining runtime minus a second
         signal.alarm((context.get_remaining_time_in_millis() // 1000) - 1)
         try:
-            LOGGER.info('REQUEST RECEIVED:\n %s', event)
-            LOGGER.info('REQUEST RECEIVED:\n %s', context)
-            LOGGER.info(event)
+            log.info('REQUEST RECEIVED:\n %s', event)
+            log.info('REQUEST RECEIVED:\n %s', context)
+            log.info(event)
             resp: CrResponse = _handler(event, context, **event['ResourceProperties'])
             signal.alarm(0)
             if type(resp) != CrResponse:
                 raise Exception("Handler {} did not return a CrResponse!".format(_handler.__name__))
+            resp_str = str(resp.data)
+            log.info(f"-: RESPONSE ({len(resp_str)}) :-\n   {'V'*(9 + len(str(len(resp_str))))}\n\n{resp_str}")
             send_cfn_resp(event, context, resp)
         except Exception as e:
             traceback.print_exc()
             tb_str = traceback.format_exc()
-            LOGGER.info('FAILED!')
-            LOGGER.info("Exception: %s", repr(e))
+            log.info('FAILED!')
+            log.info("Exception: %s", repr(e))
             resource_id = event.get('PhysicalResourceId',
                                     "Unknown-PhysicalResourceId-{}".format(event['LogicalResourceId'])
                                     )
@@ -134,13 +142,16 @@ def send_response(event, context, cfn_resp: CrResponse):
     )
     resp_dict = {
         "Status": response_status,
-        "Reason": reason_prefix + "\nLogs URL: {}".format(logs_url),
+        "Reason": reason_prefix + ("" if response_status == CfnStatus.SUCCESS else "\nLogs URL: {}".format(logs_url)),
         "PhysicalResourceId": cfn_resp.physical_id,
         "StackId": event['StackId'],
         "RequestId": event['RequestId'],
         "LogicalResourceId": event['LogicalResourceId'],
-        "Data": response_data
     }
+    log.info(f"resp_dict (no Data) sz size: {len(json.dumps(resp_dict))} (indent=1: {len(json.dumps(resp_dict, indent=1))})")
+    resp_dict.update({"Data": response_data})
+    log.info(f"resp_dict (w/ Data) sz size: {len(json.dumps(resp_dict))} (indent=1: {len(json.dumps(resp_dict, indent=1))})")
+    log.info(json.dumps(resp_dict, indent=2))
     if 'Traceback' in response_data:
         tb_str = response_data['Traceback']
         split_at = "The above exception was the direct cause of the following exception:"
@@ -153,8 +164,8 @@ def send_response(event, context, cfn_resp: CrResponse):
     resp_dict['Reason'] = resp_dict['Reason'][:600]
     response_body = json.dumps(resp_dict).encode()
 
-    LOGGER.info('ResponseURL: %s', event['ResponseURL'])
-    LOGGER.info('ResponseBody: %s', response_body.decode())
+    log.info('ResponseURL: %s', event['ResponseURL'])
+    log.info('ResponseBody: %s', response_body.decode())
 
     opener = build_opener(HTTPHandler)
     request = Request(event['ResponseURL'], data=response_body)
@@ -162,8 +173,9 @@ def send_response(event, context, cfn_resp: CrResponse):
     request.add_header('Content-Length', len(response_body))
     request.get_method = lambda: 'PUT'
     response = opener.open(request)
-    LOGGER.info("Status code: %s", response.getcode())
-    LOGGER.info("Status message: %s", response.msg)
+    log.info("Status code: %s", response.getcode())
+    log.info("Status message: %s", response.msg)
+    log.info(len(response_body))
 
 
 def timeout_handler(_signal, _frame):
