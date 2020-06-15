@@ -17,7 +17,7 @@ import os, sys
 
 from bootstrap import *
 
-from lib import *
+from common.lib import *
 
 log = logging.getLogger()
 log.setLevel(logging.INFO)

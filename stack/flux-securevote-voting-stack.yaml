@@ -254,8 +254,8 @@ Globals:
     Timeout: 180
     Environment:
       Variables:
-        PYTHON_PATH: "/opt:/opt/deps"
-        PYTHONPATH: "/opt:/opt/deps"
+        PYTHON_PATH: "/opt:/opt/deps:/var/task/deps:/var/task"
+        PYTHONPATH: "/opt:/opt/deps:/var/task/deps:/var/task"
 
 
 Resources:
@@ -263,7 +263,7 @@ Resources:
     Type: AWS::Serverless::LayerVersion
     DeletionPolicy: Delete
     Properties:
-      ContentUri: ./cr/common
+      ContentUri: ./cr
       Description: layer for all/common deps for custom resources / lambdas
       LayerName: !Sub ${NamePrefix}-common-layer
 

@@ -756,6 +756,33 @@ def deploy_macros(stack_name):
     print_output(f"Deploy succeeded!")
 
 
+@cli.command(name='deploy-cfn')
+@click.argument('stack-path')
+@click.argument('stack-name')
+def deploy_macros(stack_path, stack_name):
+    TMP_TMPL_FILE = f"tmp-{stack_name}.yaml"
+
+    pkg_cmd = f"aws cloudformation package --template-file {stack_path} --s3-bucket {S3_DEV_BUCKET} --output-template-file {TMP_TMPL_FILE}"
+    print("Package:", pkg_cmd)
+    must_run(pkg_cmd, silent=True)
+
+    obj_key = "sv-macros.yaml"
+    s3 = boto3.client('s3')
+    s3_tfer = S3Transfer(s3)
+    s3_tfer.upload_file(TMP_TMPL_FILE, S3_DEV_BUCKET, obj_key, extra_args={'ACL': 'public-read'})
+    obj_url = "{}/{}/{}".format(s3.meta.endpoint_url, S3_DEV_BUCKET, obj_key)
+
+    params_aws = []
+
+    if stack_exists(stack_name):
+        sid = update_stack(stack_name, obj_url, params_aws)
+    else:
+        sid = create_stack(stack_name, obj_url, params_aws)
+
+    stream_cfn_events(stack_name, heading_prefix="DEPLOY")
+    print_output(f"Deploy succeeded!")
+
+
 @cli.command(name='destroy')
 @click.argument('stack-name', type=click.STRING, default='')
 @click.option("--watch", default=False, type=click.BOOL, is_flag=True, help="Stream CFN events as it deploys.")

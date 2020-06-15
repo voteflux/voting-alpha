@@ -20,7 +20,7 @@ from eth_account.signers.local import LocalAccount
 import boto3
 from typing import List, Dict, Iterable, Callable, Union, TypeVar
 
-from lib import gen_ssm_nodekey_service, SVC_CHAINCODE, gen_ssm_networkid, gen_ssm_sc_addr, \
+from common.lib import gen_ssm_nodekey_service, SVC_CHAINCODE, gen_ssm_networkid, gen_ssm_sc_addr, \
     get_ssm_param_no_enc, get_ssm_param_with_enc, put_param_no_enc, put_param_with_enc, ssm_param_exists, \
     Timer, update_dict, list_ssm_params_starting_with, del_ssm_param, gen_ssm_inputs, gen_ssm_calltx, gen_ssm_send, \
     gen_ssm_call, gen_ssm_service_pks
@@ -110,6 +110,7 @@ class CallResult(CfnOutput):
     def __repr__(self):
         return f"<CallResult({self.name}): [Func:{self.function}, Inputs:{self.inputs}, Output:{self.output}]>"
 
+
 class SendResult(CfnOutput):
     def __init__(self, name, to, value, txid, cached=False, op=None):
         self.name = name
@@ -124,6 +125,7 @@ class SendResult(CfnOutput):
 
     def get_val(self):
         return self.txid
+
 
 class Contract(CfnOutput):
     def __init__(self, name, bytecode, ssm_param_name, ssm_param_inputs, addr=None, inputs=None, gas_used=None,
