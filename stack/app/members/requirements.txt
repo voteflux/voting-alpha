@@ -1,8 +1,0 @@
-pymonad
-pynamodb
-attrdict
-web3
-pyjwt
-lambda_decorators
-six
-toolz

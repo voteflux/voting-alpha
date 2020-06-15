@@ -4,6 +4,7 @@ import time
 import logging
 import os, sys
 from enum import Enum
+from pathlib import Path
 
 import bootstrap
 
@@ -270,9 +271,10 @@ def deploy_contract(w3: Web3, acct: LocalAccount, chainid: int, nonce: int, init
     return c_out
 
 
-def get_bytecode(filepath) -> str:
-    log.info(f"[get_bytecode] Opening bytecode from: {os.path.realpath(filepath)}")
-    with open(filepath, 'r') as f:
+def get_bytecode(filepath: str) -> str:
+    fp = Path('/', *(__file__.split('/')[:-1])) / Path(filepath)
+    log.info(f"[get_bytecode] Opening bytecode from: {fp}")
+    with fp.open('r') as f:
         bc = f.read().strip('\n')
     log.info(f"[get_bytecode] BC len: {len(bc)}")
     if bc[:2] != '0x':

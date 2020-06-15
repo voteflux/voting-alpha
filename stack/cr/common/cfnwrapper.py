@@ -23,6 +23,7 @@ log.setLevel(logging.INFO)
 
 log.info(f"Path: {sys.path}")
 
+
 class CfnStatus(Enum):
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
@@ -142,7 +143,7 @@ def send_response(event, context, cfn_resp: CrResponse):
     )
     resp_dict = {
         "Status": response_status,
-        "Reason": reason_prefix + ("" if response_status == CfnStatus.SUCCESS else "\nLogs URL: {}".format(logs_url)),
+        "Reason": reason_prefix,  # + ("" if response_status == CfnStatus.SUCCESS else "\nLogs URL: {}".format(logs_url)),
         "PhysicalResourceId": cfn_resp.physical_id,
         "StackId": event['StackId'],
         "RequestId": event['RequestId'],

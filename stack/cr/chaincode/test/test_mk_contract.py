@@ -23,7 +23,7 @@ from eth_utils import keccak
 
 import boto3
 boto3.setup_default_session(region_name='ap-southeast-2')
-from chaincode import mk_contract, is_tx_confirmed
+from chaincode import mk_contract
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger('TestChaincode')
@@ -88,8 +88,9 @@ def test_mk_contract():
     tx_resp = w3.eth.sendTransaction({'to': acct.address, 'from': w3.eth.accounts[0], 'value': 10 * 10 ** 18})
     log.info(f'tx_resp: {tx_resp}')
     log.info(w3.eth.getTransaction(tx_resp))
-    w3.personal.importRawKey("0x" + b"aedufghieuhiughekjudsdfahskljdhf".hex(), 'asdf')
-    w3.personal.unlockAccount(acct.address, 'asdf')
+
+    # w3.personal.importRawKey("0x" + b"aedufghieuhiughekjudsdfahskljdhf".hex(), 'asdf')
+    # w3.personal.unlockAccount(acct.address, 'asdf')
     chainid = None  # needed for testrpc
     nonce = 0
 

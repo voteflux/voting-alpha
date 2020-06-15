@@ -614,7 +614,7 @@ py_targets = click.Choice(py_targets_raw + ['all'])
 def pip(target, pkgs, no_system, pip_args, use_docker):
     targets = py_targets_raw if target == "all" else [target]
     _pkgs = list(pkgs)
-    target_paths = [{'cr': 'stack/cr/common', 'members': 'stack/app/members'}[target] for target in targets]
+    target_paths = [{'cr': 'stack/cr/common'}[target] for target in targets]
     for target_path in target_paths:
         _pip(target_path, _pkgs, no_system, pip_args, use_docker)
 
@@ -641,7 +641,7 @@ def _pip(target_path, pkgs, no_system, pip_args, use_docker):
         system = '' if no_system else '--system'
         _cmd_outer = '{}'
         if platform.system() == "Darwin":
-            _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.6 {}'
+            _cmd_outer = 'docker run --rm -v "$PWD":/var/task lambci/lambda:build-python3.7 {}'
             system = ''
         # _cmd = _cmd_outer.format(...origcmd here...)
         pip_cmd = f'pip3 install --target=deps -r {reqs_file} --upgrade {pip_args}'
