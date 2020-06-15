@@ -133,7 +133,6 @@ Resources:
         - Name: apg-va-init
           Type: calltx
           Function: $apg-voting-alpha.initVotingAlpha
-          Inputs: []
         - Name: apg-va-self-op
           Type: calltx
           Function: $apg-voting-alpha.initAddOperator
@@ -141,7 +140,10 @@ Resources:
         - Name: apg-va-self-mbr
           Type: calltx
           Function: $agp-voting-alpha.operatorAddMember
-          Inputs: [ 'cfn-member', '^self' ]
+          Inputs: [ '^self' ]
+        - Name: apg-va-init-done
+          Type: calltx
+          Function: $agp-voting-alpha.initComplete
 
 
   rChaincodeLambda:
