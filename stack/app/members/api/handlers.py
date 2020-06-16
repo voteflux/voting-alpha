@@ -24,7 +24,7 @@ from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
 from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, \
-    verifyDictKeys, encode_and_sign_msg
+    verifyDictKeys, encode_and_sign_msg, json_to_str_safe
 from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
 
@@ -43,8 +43,14 @@ ending_time_human = "Thursday December 5th, 2:05pm"
 def mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr, weight=1):
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_APG_ABI)
     log.info(f"dir of contract: {dir(c)}")
-    tx = c.functions['operatorAddMember'](voter_addr).buildTransaction(
-        {'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
+    log.info(f"dir of contract.functions: {dir(c.functions)}")
+    if len(voter_addr) > 42:
+        raise LambdaError(413, "supplied address was >42 characters so cant be a valid eth addr")
+    op_add_member_call = c.functions.operatorAddMember(voter_addr)
+    log.info(f"dir of opAddMemberCall: {dir(op_add_member_call)}")
+    tx = op_add_member_call.buildTransaction(
+        {'from': my_addr, 'gas': 8000000, 'gasPrice': 1}
+    )
     log.info(f"unsigned membership tx: {json.dumps(tx)}")
     return tx
 
@@ -141,7 +147,7 @@ def signup(pl):
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
         account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
         my_addr = account.address
-        membership_addr = lookup_group_contract("main")
+        membership_addr = get_env("pApgVotingAlphaAddr")
         unsigned_transactions = [
             mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr),
             {'from': my_addr, 'to': voter_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
@@ -163,7 +169,8 @@ def signup(pl):
             log.info(f'confirmed: {txid}')
             txr = w3.eth.getTransactionReceipt(txid)
             out_txs[txid] = txr
-            if txr['status'] == 0:
+            if txr['status'] != 0:
+                log.error(f"transaction status != 0: {json_to_str_safe(dict(unsigned_tx=unsigned_tx, txid=txid, txr=txr))}")
                 raise OnboardingException()
 
         log.info(f'first txid in out_txs: {out_txs[txids[0]]}')

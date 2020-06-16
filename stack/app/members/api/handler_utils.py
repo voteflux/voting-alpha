@@ -12,6 +12,8 @@ from eth_account import Account
 from eth_account.messages import SignableMessage, encode_defunct
 from hexbytes import HexBytes
 from lambda_decorators import async_handler, dump_json_body, load_json_body, LambdaDecorator, after
+from web3.datastructures import AttributeDict
+
 from .db import verify_session_token
 from .lib import mk_logger
 
@@ -32,6 +34,19 @@ class Signature(AttrDict):
     s: bytes
     v: bytes
     signature: HexBytes
+
+
+class HexJsonEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, HexBytes):
+            return obj.hex()
+        if isinstance(obj, AttrDict) or isinstance(obj, AttributeDict):
+            return dict(**obj)
+        return super().default(obj)
+
+
+def json_to_str_safe(thing, **kwargs):
+    return json.dumps(thing, cls=HexJsonEncoder, **kwargs)
 
 
 def verify(condition, failure_msg=None, user_msg: str = None):
@@ -99,6 +114,7 @@ def ensure_session(f):
 
             # todo: more?
             return await f(event, ctx, *args, msg=msg, eth_address=address, jwt_claim=claim, session=session, **kwargs)
+
         try:
             return await inner2()
         except LambdaError as exception:
