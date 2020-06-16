@@ -1,0 +1,31 @@
+FROM ubuntu:20.04
+
+RUN apt-get update && apt-get upgrade -y
+RUN apt-get update && apt-get install -y wget
+
+RUN wget 'https://github.com/openethereum/openethereum/releases/download/v3.0.1/openethereum-linux-v3.0.1.zip' -O openeth.zip
+
+RUN apt-get install -y unzip
+
+RUN (echo "8dd753058e5db77ffaede5a53418005f9c8133212448e11df9169a651cdac997" | sha256sum openeth.zip) \
+    && unzip openeth.zip && cp openethereum /usr/local/bin
+
+RUN wget https://s3.ap-southeast-2.amazonaws.com/flux-app-dev-static-resources/chain/chainspec.json
+RUN chmod +x /usr/local/bin/openethereum
+
+
+EXPOSE 8545
+EXPOSE 8546
+EXPOSE 30303
+
+CMD openethereum --chain ./chainspec.json \
+    --jsonrpc-port=8545 \
+    --jsonrpc-interface=all \
+    --jsonrpc-apis=all \
+    --jsonrpc-hosts=all \
+    --jsonrpc-cors=all \
+    --ws-port=8546 \
+    --ws-interface=all \
+    --ws-apis=all \
+    --ws-hosts=all \
+    --ws-origins=all

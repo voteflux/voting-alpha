@@ -580,8 +580,9 @@ def docker_lambda(cmd, extra_args=''):
     # }.items()])
     env_args = ''
     return os.system(
-        f'docker run --rm -e AWS_DEFAULT_REGION=ap-southeast-2 '
-        f'-t -v "{mnt_dir}":/var/task {env_args} {extra_args} voteflux/voting-alpha-lambda:latest {cmd}')
+        f'docker run --rm -t -v "{mnt_dir}":/var/task '
+        f' {env_args} {extra_args} '
+        f' voteflux/voting-alpha-lambda:latest {cmd}')
 
 
 @click.group()
@@ -658,6 +659,31 @@ def _pip(target_path, pkgs, no_system, pip_args, use_docker):
     os.chdir(curr_dir)
 
 
+@cli.group("tools")
+def tools():
+    pass
+
+
+@tools.command(name="node-up")
+def tools_start_node():
+    must_run([
+        "bash",
+        "-c",
+        " docker build -f docker/Dockerfile.run-openethereum -t voteflux/voting-alpha-note:latest ./docker & "
+        " docker stop voting-alpha-node & "
+        " docker network create voting-alpha & "
+        " wait "
+        ])
+    must_run("docker run --rm --name voting-alpha-node --network voting-alpha "
+             "-p 8545:8545 -p 8546:8546 "
+             "-d voteflux/voting-alpha-note:latest")
+
+
+@tools.command(name="node-logs")
+def tools_node_logs():
+    os.system("docker logs -f voting-alpha-node")
+
+
 @cli.group("test")
 def test():
     pass
@@ -671,10 +697,27 @@ def test_chaincode():
 
 @test.command(name='api-members')
 def test_api_members():
+    logger.info(f"""Ensuring a node is running in a docker container is a requirement for this test.
+If the tests fail to connect to a node try: './manage tools start-node'""")
+
+    sts = boto3.client('sts')
+    session_token = sts.get_session_token(DurationSeconds=(60 * 15))
+    aki = session_token['Credentials']['AccessKeyId']
+    sak = session_token['Credentials']['SecretAccessKey']
+    st = session_token['Credentials']['SessionToken']
+
+    extra_args = \
+        f' -e AWS_DEFAULT_REGION=ap-southeast-2 -e AWS_ACCESS_KEY_ID={aki} ' \
+        f' -e AWS_SECRET_ACCESS_KEY={sak} -e AWS_SESSION_TOKEN={st} ' \
+        f' -e pNamePrefix={os.environ.get("NAME_PREFIX")} ' \
+        f' -e pEthHost=http://voting-alpha-node:8545/ ' \
+        f' --user root --network voting-alpha '
+
     test_cmd = 'bash -c "export ORIG_DIR=$PWD && ' \
-               'cd stack/app/members/api && ' \
-               'pytest || (pip3 install pytest && pytest)"'
-    docker_lambda(test_cmd, extra_args="--user root")
+               ' cd stack/app/members/api && ' \
+               ' (which pytest >/dev/null || pip3 install pytest) && pytest"'
+
+    docker_lambda(test_cmd, extra_args=extra_args)
 
 
 @cli.command(name="stream-cfn")

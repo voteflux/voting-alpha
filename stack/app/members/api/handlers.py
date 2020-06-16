@@ -113,7 +113,8 @@ def create_ballot(spec_hash):
         tx.update({'from': _from, 'value': value, 'gas': gas, 'gas_price': gas_price})
         return tx
 
-    log.info('Balance:', w3.eth.getBalance(account.address))
+    log.info(f'Balance: {w3.eth.getBalance(account.address)}')
+    log.info(f"ix_address: {ix_address}")
 
     # ixAbi = json.loads(load_sc('SVLightIndex.abi.json'))
     # ix = w3.eth.contract(abi=ixAbi, address=ix_address)

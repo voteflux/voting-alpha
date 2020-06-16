@@ -25,4 +25,6 @@ def test_membership_raw():
 
 def test_create_ballot():
     bspec_part1 = bytes(datetime.now().isoformat(), 'ascii')[:32].hex()
-    create_ballot('0x' + '0'*(64 - len(bspec_part1)) + bspec_part1)
+    spec_hash = '0x' + '0'*(64 - len(bspec_part1)) + bspec_part1
+    log.info(f"test_create_ballot: spec_hash: {spec_hash}")
+    create_ballot(spec_hash)

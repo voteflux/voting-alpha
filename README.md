@@ -59,6 +59,20 @@ To deploy two stacks along side eachother the following vars must be unique:
 * NAME_PREFIX
 * SUBDOMAIN
 
+You can edit `.env.dev`, etc to keep them neat
+
+### Tests
+
+* `./manage test chaincode`
+* `./manage test api-members`
+  - note: ensure a containerized openethereum node and RPC endpoint is running before hand: `./manage tools node-up`
+
+#### Curl based, can be run from CLI
+
+* signup: `curl -v -X POST -d '{"method":"signup","params":{"ethereumAddress":"0xe9b0722856FA4EfF597Bd2123C00a4'$(date +%s)'", "unsafeChecksum": true}}' https://api.blockchain.suzuka.flux.party/members/api`
+* ballot_publish: `curl -v -X POST -d '{"method":"ballot_publish","params":{"specHash":"0x0f74cba1f103c8636cb87f241cd27a6ef1776185fc956acdb999cd6e24610b05"}}' https://api.blockchain.suzuka.flux.party/members/api`
+  - note: this handler might need more data in future, like a `ballotSpec` param.
+
 #### DEPRECATED
 
 * `export OFFSET='1'` -- this is just used to allow us to create more than one stack in parallel for dev purposes (by changing offset)
