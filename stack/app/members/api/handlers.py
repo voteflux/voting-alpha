@@ -104,7 +104,7 @@ def create_ballot(spec_hash):
     key_name = "publish"
     priv_key = get_ssm_param(f"sv-{p_name_prefix}-nodekey-service-{key_name}", with_decryption=True)
     account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
-    log.info('Loaded account w/ address:', account.address)
+    log.info(f'Loaded account w/ address: {account.address}')
 
     ix_address = get_env("pApgVotingAlphaAddr")
 
@@ -125,7 +125,7 @@ def create_ballot(spec_hash):
     tx.update(ix.functions.createNewBill(spec_hash).buildTransaction(tx))
     log.info(f"createNewBill tx: {json.dumps(tx)}")
     txid = sign_and_send(w3, account, tx)
-    return txid
+    return {"result": "success", "billCreationTxid": "0x" + txid.hex()}
 
     # ballots = [{
     #     "ballotVersion": 1,
@@ -370,7 +370,8 @@ It is important you retain the password shown to you on your voting device.
 def get_ssm_param(name, decode_json=False, with_decryption=False):
     try:
         r = ssm.get_parameter(Name=name, WithDecryption=with_decryption)
-        log.info(f"got ssm param: {json_to_str_safe(r)}")
+        # this will log secrets, use only if debugging
+        # log.info(f"got ssm param: {json_to_str_safe(r)}")
         value = r['Parameter']['Value']
     except Exception as e:
         log.warning(f"Error during get_parameter(Name='{name}'): {repr(e)}")
