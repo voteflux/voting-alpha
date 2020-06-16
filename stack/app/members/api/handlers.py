@@ -110,7 +110,7 @@ def create_ballot(spec_hash):
 
     def base_tx(_from=account.address, value=0, gas=8000000, gas_price=1, to=None):
         tx = {} if to is None else dict(to=to)
-        tx.update({'from': _from, 'value': value, 'gas': gas, 'gas_price': gas_price})
+        tx.update({'from': _from, 'value': value, 'gas': gas, 'gasPrice': gas_price})
         return tx
 
     log.info(f'Balance: {w3.eth.getBalance(account.address)}')

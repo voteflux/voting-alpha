@@ -711,6 +711,7 @@ If the tests fail to connect to a node try: './manage tools start-node'""")
         f' -e AWS_SECRET_ACCESS_KEY={sak} -e AWS_SESSION_TOKEN={st} ' \
         f' -e pNamePrefix={os.environ.get("NAME_PREFIX")} ' \
         f' -e pEthHost=http://voting-alpha-node:8545/ ' \
+        f' -e pApgVotingAlphaAddr=0x7B8068D32AA298158E838Fcd9a324B9810AE8333 ' \
         f' --user root --network voting-alpha '
 
     test_cmd = 'bash -c "export ORIG_DIR=$PWD && ' \
