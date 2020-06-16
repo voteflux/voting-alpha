@@ -1,9 +1,10 @@
 import json
 import logging
+from datetime import datetime
 
 from web3 import Web3
 from web3.providers.eth_tester import EthereumTesterProvider
-from .handlers import handle_quickchain_upgrade, mk_raw_membership_tx
+from .handlers import handle_quickchain_upgrade, mk_raw_membership_tx, create_ballot
 
 log = logging.getLogger(__name__)
 
@@ -20,3 +21,8 @@ def test_membership_raw():
     a3 = w3.eth.account.from_key("0x0000000000000000000000000000000000000000000000000000000000003300")
     tx = mk_raw_membership_tx(w3, a3.address, a1.address, a2.address)
     log.info(f"test_membership_raw got tx: {json.dumps(tx)}")
+
+
+def test_create_ballot():
+    bspec_part1 = bytes(datetime.now().isoformat(), 'ascii')[:32].hex()
+    create_ballot('0x' + '0'*(64 - len(bspec_part1)) + bspec_part1)

@@ -75,7 +75,7 @@ def sign_and_send(w3, account, unsigned_tx):
 @post_common
 async def handle_quickchain_upgrade(event, ctx):
     def ballot_publish(pl):
-        spec_hash = pl["spec_hash"]
+        spec_hash = pl["specHash"]
         return create_ballot(spec_hash)
 
     try:
@@ -121,7 +121,7 @@ def create_ballot(spec_hash):
     voting_alpha_sc_abi = json.loads(load_sc('apguerrera/VotingAlpha.abi.json'))
     ix = w3.eth.contract(abi=voting_alpha_sc_abi, address=ix_address)
     tx = base_tx()
-    tx.update(**ix.functions['createNewBill'](spec_hash).buildTransaction(tx))
+    tx.update(ix.functions.createNewBill(spec_hash).buildTransaction(tx))
     log.info(f"createNewBill tx: {json.dumps(tx)}")
     txid = sign_and_send(w3, account, tx)
     return txid
