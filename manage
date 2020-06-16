@@ -569,6 +569,7 @@ def docker_lambda(cmd, extra_args=''):
     wsl = is_wsl()
     if wsl:
         print("Detected WSL...")
+    os.system(f'docker build -t voteflux/voting-alpha-lambda:latest -f docker/Dockerfile ./docker')
     mnt_dir = '$PWD' if not wsl else '$(wslpath -w $PWD)'
     # sts = boto3.client('sts')
     # session_token = sts.get_session_token(DurationSeconds=900)['Credentials']
@@ -579,7 +580,8 @@ def docker_lambda(cmd, extra_args=''):
     # }.items()])
     env_args = ''
     return os.system(
-        f'docker run --rm -t -v "{mnt_dir}":/var/task {env_args} {extra_args} lambci/lambda:build-python3.6 {cmd}')
+        f'docker run --rm -e AWS_DEFAULT_REGION=ap-southeast-2 '
+        f'-t -v "{mnt_dir}":/var/task {env_args} {extra_args} voteflux/voting-alpha-lambda:latest {cmd}')
 
 
 @click.group()
@@ -656,10 +658,23 @@ def _pip(target_path, pkgs, no_system, pip_args, use_docker):
     os.chdir(curr_dir)
 
 
-@cli.command(name='test-chaincode')
+@cli.group("test")
+def test():
+    pass
+
+
+@test.command(name='chaincode')
 def test_chaincode():
     test_cmd = 'bash -c "cd stack/cr/chaincode; ls -al && tail cfnwrapper.py && tail lib.py; python3 test/test_mk_contract.py"'
     docker_lambda(test_cmd)
+
+
+@test.command(name='api-members')
+def test_api_members():
+    test_cmd = 'bash -c "export ORIG_DIR=$PWD && ' \
+               'cd stack/app/members/api && ' \
+               'pytest || (pip3 install pytest && pytest)"'
+    docker_lambda(test_cmd, extra_args="--user root")
 
 
 @cli.command(name="stream-cfn")

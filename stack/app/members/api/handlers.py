@@ -6,11 +6,11 @@ import time
 from pathlib import Path
 
 import boto3
+from eth_account import Account
 
 from .bootstrap import *
 
 import jwt
-from eth_account import Account
 from api.exceptions import LambdaError
 from attrdict import AttrDict
 from hexbytes import HexBytes
@@ -42,8 +42,10 @@ ending_time_human = "Thursday December 5th, 2:05pm"
 
 def mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr, weight=1):
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_APG_ABI)
-    tx = c.functions.initAddMember(str(now()), voter_addr).buildTransaction(
+    log.info(f"dir of contract: {dir(c)}")
+    tx = c.functions['operatorAddMember'](voter_addr).buildTransaction(
         {'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
+    log.info(f"unsigned membership tx: {json.dumps(tx)}")
     return tx
 
 
@@ -89,23 +91,23 @@ async def handle_quickchain_upgrade(event, ctx):
 
 
 def create_ballot(spec_hash):
-    p_name_prefix = get_env('pNamePrefix')
+    log.info(f"create_ballot start: specHash: {spec_hash}")
 
+    w3 = Web3(Web3.HTTPProvider(get_env("pEthHost")))
+    p_name_prefix = get_env('pNamePrefix')
     key_name = "publish"
     priv_key = get_ssm_param(f"sv-{p_name_prefix}-nodekey-service-{key_name}", with_decryption=True)
-    account = Account.privateKeyToAccount(priv_key)
-    print('Loaded account w/ address:', account.address)
+    account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
+    log.info('Loaded account w/ address:', account.address)
 
     ix_address = get_env("pApgVotingAlphaAddr")
-    http_provider = get_env("pEthHost")
 
     def base_tx(_from=account.address, value=0, gas=8000000, gas_price=1, to=None):
         tx = {} if to is None else dict(to=to)
         tx.update({'from': _from, 'value': value, 'gas': gas, 'gas_price': gas_price})
         return tx
 
-    w3 = Web3(Web3.HTTPProvider(http_provider))
-    print('Balance:', w3.eth.getBalance(account.address))
+    log.info('Balance:', w3.eth.getBalance(account.address))
 
     # ixAbi = json.loads(load_sc('SVLightIndex.abi.json'))
     # ix = w3.eth.contract(abi=ixAbi, address=ix_address)
@@ -113,7 +115,8 @@ def create_ballot(spec_hash):
     voting_alpha_sc_abi = json.loads(load_sc('apguerrera/VotingAlpha.abi.json'))
     ix = w3.eth.contract(abi=voting_alpha_sc_abi, address=ix_address)
     tx = base_tx()
-    tx.update(**ix.functions['createNewBill']().buildTransaction(spec_hash))
+    tx.update(**ix.functions['createNewBill'](spec_hash).buildTransaction(tx))
+    log.info(f"createNewBill tx: {json.dumps(tx)}")
     txid = sign_and_send(w3, account, tx)
     return txid
 
@@ -134,15 +137,15 @@ def signup(pl):
     voter_addr = pl["ethereumAddress"]
     # setup
     try:
-        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
-        account = Account.privateKeyToAccount(priv_key)
-        my_addr = account.address
         w3 = Web3(HTTPProvider(get_env('pEthHost')))
+        priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
+        account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
+        my_addr = account.address
         membership_addr = lookup_group_contract("main")
         unsigned_transactions = [
             mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr),
             {'from': my_addr, 'to': voter_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
-            ]
+        ]
         log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
     except Exception as e:
         log.error(f'got exception during finalization setup: {e}')
@@ -364,129 +367,46 @@ MEMBERSHIP_C_ABI = [{"constant": False,
                                 {"name": "startTime", "type": "uint48"}, {"name": "endTime", "type": "uint48"}],
                      "name": "setMember", "outputs": [], "payable": False, "stateMutability": "nonpayable",
                      "type": "function"}]
-MEMBERSHIP_APG_ABI = [{"anonymous": False, "inputs": [
-    {"indexed": True, "internalType": "address", "name": "memberAddress", "type": "address"},
-    {"indexed": False, "internalType": "string", "name": "name", "type": "string"},
-    {"indexed": False, "internalType": "uint256", "name": "totalAfter", "type": "uint256"}], "name": "MemberAdded",
-                       "type": "event"}, {"anonymous": False, "inputs": [
-    {"indexed": True, "internalType": "address", "name": "memberAddress", "type": "address"},
-    {"indexed": False, "internalType": "string", "name": "oldName", "type": "string"},
-    {"indexed": False, "internalType": "string", "name": "newName", "type": "string"}], "name": "MemberNameUpdated",
-                                          "type": "event"}, {"anonymous": False, "inputs": [
-    {"indexed": True, "internalType": "address", "name": "memberAddress", "type": "address"},
-    {"indexed": False, "internalType": "string", "name": "name", "type": "string"},
-    {"indexed": False, "internalType": "uint256", "name": "totalAfter", "type": "uint256"}], "name": "MemberRemoved",
-                                                             "type": "event"}, {"anonymous": False, "inputs": [
-    {"indexed": True, "internalType": "uint256", "name": "proposalId", "type": "uint256"},
-    {"indexed": True, "internalType": "enum Proposals.ProposalType", "name": "proposalType", "type": "uint8"},
-    {"indexed": True, "internalType": "address", "name": "proposer", "type": "address"}], "name": "NewProposal",
-                                                                                "type": "event"}, {"anonymous": False,
-                                                                                                   "inputs": [{
-                                                                                                       "indexed": False,
-                                                                                                       "internalType": "address",
-                                                                                                       "name": "_operator",
-                                                                                                       "type": "address"}],
-                                                                                                   "name": "OperatorAdded",
-                                                                                                   "type": "event"},
-                      {"anonymous": False, "inputs": [
-                          {"indexed": False, "internalType": "address", "name": "_operator", "type": "address"}],
-                       "name": "OperatorRemoved", "type": "event"}, {"anonymous": False, "inputs": [
-        {"indexed": True, "internalType": "address", "name": "previousOwner", "type": "address"},
-        {"indexed": True, "internalType": "address", "name": "newOwner", "type": "address"}],
-                                                                     "name": "OwnershipTransferred", "type": "event"},
-                      {"anonymous": False,
-                       "inputs": [{"indexed": True, "internalType": "uint256", "name": "proposalId", "type": "uint256"},
-                                  {"indexed": True, "internalType": "address", "name": "voter", "type": "address"},
-                                  {"indexed": False, "internalType": "bool", "name": "vote", "type": "bool"},
-                                  {"indexed": False, "internalType": "uint256", "name": "votedYes", "type": "uint256"},
-                                  {"indexed": False, "internalType": "uint256", "name": "votedNo", "type": "uint256"}],
-                       "name": "Voted", "type": "event"},
-                      {"inputs": [{"internalType": "address", "name": "_operator", "type": "address"}],
-                       "name": "addOperator", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "uint256", "name": "_index", "type": "uint256"}],
-                       "name": "getMemberByIndex",
-                       "outputs": [{"internalType": "address", "name": "_member", "type": "address"}],
-                       "stateMutability": "view", "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "memberAddress", "type": "address"}],
-                       "name": "getMemberData", "outputs": [{"internalType": "bool", "name": "_exists", "type": "bool"},
-                                                            {"internalType": "uint256", "name": "_index",
-                                                             "type": "uint256"},
-                                                            {"internalType": "string", "name": "_name",
-                                                             "type": "string"}], "stateMutability": "view",
-                       "type": "function"}, {"inputs": [], "name": "getMembers", "outputs": [
-        {"internalType": "address[]", "name": "", "type": "address[]"}], "stateMutability": "view", "type": "function"},
-                      {"inputs": [{"internalType": "uint256", "name": "proposalId", "type": "uint256"}],
-                       "name": "getProposal",
-                       "outputs": [{"internalType": "uint256", "name": "_proposalType", "type": "uint256"},
-                                   {"internalType": "address", "name": "_proposer", "type": "address"},
-                                   {"internalType": "string", "name": "_description", "type": "string"},
-                                   {"internalType": "uint256", "name": "_votedNo", "type": "uint256"},
-                                   {"internalType": "uint256", "name": "_votedYes", "type": "uint256"},
-                                   {"internalType": "uint256", "name": "_initiated", "type": "uint256"},
-                                   {"internalType": "uint256", "name": "_closed", "type": "uint256"}],
-                       "stateMutability": "view", "type": "function"},
-                      {"inputs": [{"internalType": "uint256", "name": "proposalId", "type": "uint256"}],
-                       "name": "getVotingStatus",
-                       "outputs": [{"internalType": "bool", "name": "isOpen", "type": "bool"},
-                                   {"internalType": "uint256", "name": "voteCount", "type": "uint256"},
-                                   {"internalType": "uint256", "name": "yesPercent", "type": "uint256"},
-                                   {"internalType": "uint256", "name": "noPercent", "type": "uint256"}],
-                       "stateMutability": "view", "type": "function"}, {
-                          "inputs": [{"internalType": "string", "name": "_name", "type": "string"},
-                                     {"internalType": "address", "name": "_address", "type": "address"}],
-                          "name": "initAddMember", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "_operator", "type": "address"}],
-                       "name": "initAddOperator", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [], "name": "initComplete", "outputs": [], "stateMutability": "nonpayable",
-                       "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "_address", "type": "address"}],
-                       "name": "initRemoveMember", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [], "name": "initVotingAlpha", "outputs": [], "stateMutability": "nonpayable",
-                       "type": "function"}, {"inputs": [], "name": "initialised",
-                                             "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-                                             "stateMutability": "view", "type": "function"},
-                      {"inputs": [], "name": "isOperated",
-                       "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view",
-                       "type": "function"}, {"inputs": [], "name": "isOperator",
-                                             "outputs": [{"internalType": "bool", "name": "", "type": "bool"}],
-                                             "stateMutability": "view", "type": "function"},
-                      {"inputs": [], "name": "isOwner",
-                       "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view",
-                       "type": "function"}, {"inputs": [], "name": "mOwner",
-                                             "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                                             "stateMutability": "view", "type": "function"},
-                      {"inputs": [], "name": "numberOfMembers",
-                       "outputs": [{"internalType": "uint256", "name": "", "type": "uint256"}],
-                       "stateMutability": "view", "type": "function"}, {"inputs": [], "name": "numberOfProposals",
-                                                                        "outputs": [
-                                                                            {"internalType": "uint256", "name": "",
-                                                                             "type": "uint256"}],
-                                                                        "stateMutability": "view", "type": "function"},
-                      {"inputs": [{"internalType": "string", "name": "_name", "type": "string"},
-                                  {"internalType": "address", "name": "_address", "type": "address"}],
-                       "name": "operatorAddMember", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "_address", "type": "address"}],
-                       "name": "operatorRemoveMember", "outputs": [], "stateMutability": "nonpayable",
-                       "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "", "type": "address"}], "name": "operators",
-                       "outputs": [{"internalType": "bool", "name": "", "type": "bool"}], "stateMutability": "view",
-                       "type": "function"}, {"inputs": [], "name": "owner",
-                                             "outputs": [{"internalType": "address", "name": "", "type": "address"}],
-                                             "stateMutability": "view", "type": "function"},
-                      {"inputs": [{"internalType": "string", "name": "billName", "type": "string"}],
-                       "name": "proposeNationalBill",
-                       "outputs": [{"internalType": "uint256", "name": "proposalId", "type": "uint256"}],
-                       "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "_operator", "type": "address"}],
-                       "name": "removeOperator", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "bool", "name": "_isOperated", "type": "bool"}],
-                       "name": "setOperated", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "address", "name": "newOwner", "type": "address"}],
-                       "name": "transferOwnership", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "uint256", "name": "proposalId", "type": "uint256"}],
-                       "name": "voteNo", "outputs": [], "stateMutability": "nonpayable", "type": "function"},
-                      {"inputs": [{"internalType": "uint256", "name": "proposalId", "type": "uint256"}],
-                       "name": "voteYes", "outputs": [], "stateMutability": "nonpayable", "type": "function"}]
+MEMBERSHIP_APG_ABI = [
+    {"constant": False, "inputs": [{"name": "proposalId", "type": "uint256"}], "name": "voteNo", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_address", "type": "address"}], "name": "operatorAddMember", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": True, "inputs": [{"name": "specHash", "type": "bytes32"}], "name": "getProposalId",
+     "outputs": [{"name": "", "type": "uint256"}], "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_address", "type": "address"}], "name": "initAddMember", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": False, "inputs": [{"name": "proposalId", "type": "uint256"}], "name": "voteYes", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": True, "inputs": [], "name": "numberOfProposals", "outputs": [{"name": "", "type": "uint256"}],
+     "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": True, "inputs": [{"name": "proposalId", "type": "uint256"}], "name": "getVotingStatus",
+     "outputs": [{"name": "isOpen", "type": "bool"}, {"name": "voteCount", "type": "uint256"},
+                 {"name": "yesPercent", "type": "uint256"}, {"name": "noPercent", "type": "uint256"},
+                 {"name": "nVotes", "type": "uint256"}, {"name": "nYes", "type": "uint256"},
+                 {"name": "nNo", "type": "uint256"}], "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_operator", "type": "address"}], "name": "addOperator", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": True, "inputs": [], "name": "getMembers", "outputs": [{"name": "", "type": "address[]"}],
+     "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": True, "inputs": [], "name": "numberOfMembers", "outputs": [{"name": "", "type": "uint256"}],
+     "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_address", "type": "address"}], "name": "operatorRemoveMember",
+     "outputs": [], "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_operator", "type": "address"}], "name": "removeOperator", "outputs": [],
+     "payable": False, "stateMutability": "nonpayable", "type": "function"},
+    {"constant": True, "inputs": [{"name": "proposalId", "type": "uint256"}], "name": "getProposal",
+     "outputs": [{"name": "_proposalType", "type": "uint256"}, {"name": "_proposer", "type": "address"},
+                 {"name": "_specHash", "type": "bytes32"}, {"name": "_votedNo", "type": "uint256"},
+                 {"name": "_votedYes", "type": "uint256"}, {"name": "_initiated", "type": "uint256"},
+                 {"name": "_closed", "type": "uint256"}], "payable": False, "stateMutability": "view",
+     "type": "function"},
+    {"constant": True, "inputs": [{"name": "proposalId", "type": "uint256"}], "name": "getSpecHash",
+     "outputs": [{"name": "", "type": "bytes32"}], "payable": False, "stateMutability": "view", "type": "function"},
+    {"constant": False, "inputs": [{"name": "_specHash", "type": "bytes32"}], "name": "createNewBill",
+     "outputs": [{"name": "proposalId", "type": "uint256"}], "payable": False, "stateMutability": "nonpayable",
+     "type": "function"}]
+
 GET_BALANCE_ABI = [{"constant": True, "inputs": [{"name": "v", "type": "address"}], "name": "balanceOf",
                     "outputs": [{"name": "", "type": "uint256"}], "payable": False, "stateMutability": "view",
                     "type": "function"}]
@@ -532,10 +452,10 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
 
     # setup
     try:
+        w3 = Web3(Web3.HTTPProvider(get_env("pEthHost")))
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
-        account = Account.privateKeyToAccount(priv_key)
+        account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
         my_addr = account.address
-        w3 = Web3(HTTPProvider(get_env('pEthHost')))
         voter_weights: MapAttribute = voter_enrolled.weightingMap
         unsigned_transactions = [mk_weighting_allocation(w3, my_addr, eth_address, g, w) for (g, w) in
                                  voter_weights.attribute_values.items() if w > 0]
@@ -615,7 +535,8 @@ def test_establish_session_via_handler():
     global LAST_GENERATED_OTP
 
     ctx = AttrDict(loop='loop')
-    acct = Account.privateKeyToAccount(_hash(b'hello')[:32])
+    w3 = Web3(Web3.HTTPProvider(get_env("pEthHost")))
+    acct = w3.eth.account.from_key(_hash(b'hello')[:32])  # Account.privateKeyToAccount(_hash(b'hello')[:32])
     log.info(f"tests using account {acct.address} with privkey {acct.privateKey}")
     test_email_addr = 'test-ba-123@xk.io'
 

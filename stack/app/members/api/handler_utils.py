@@ -64,7 +64,7 @@ def encode_and_sign_msg(msg, acct) -> (SignableMessage, bytes, Signature):
     return msg_to_sign, full_msg, signed
 
 
-def ensure_session_dec2019(f):
+def ensure_session(f):
     async def inner(event, ctx, *args, **kwargs):
         async def inner2():
             data = event['body']

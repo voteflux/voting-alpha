@@ -5,3 +5,7 @@ pyjwt
 lambda_decorators
 six
 toolz
+pytest
+web3
+ecdsa
+eth_tester
