@@ -5,7 +5,8 @@ Parameters:
   pSecurityGroup:
     Type: String
   pAmiId:
-    Type: 'AWS::EC2::Image::Id'
+    Type: AWS::EC2::Image::Id
+    # AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
   pNodeNumber:
     Type: String
   pNamePrefix:

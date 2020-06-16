@@ -40,9 +40,9 @@ ending_timestamp = 1575515100
 ending_time_human = "Thursday December 5th, 2:05pm"
 
 
-def mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr, weight=1):
+def mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr, weight=1):
     c = w3.eth.contract(address=membership_addr, abi=MEMBERSHIP_APG_ABI)
-    tx = c.functions.initAddMember(str(now()), to_addr).buildTransaction(
+    tx = c.functions.initAddMember(str(now()), voter_addr).buildTransaction(
         {'from': my_addr, 'gas': 8000000, 'gasPrice': 1})
     return tx
 
@@ -84,8 +84,8 @@ async def handle_quickchain_upgrade(event, ctx):
         e_str = str(e)
         log.error(f"handle_quickchain_upgrade errored: {type(e)}: {e_str}")
         import traceback
-        log.error(traceback.print_exc(e.__traceback__))
-        raise LambdaError(500)
+        log.error(traceback.format_exc())
+        raise LambdaError(500, msg=f"exception: e: {e}, e.args: {e.args}")
 
 
 def create_ballot(spec_hash):
@@ -131,7 +131,7 @@ def create_ballot(spec_hash):
 
 
 def signup(pl):
-    to_addr = pl["voterAddr"]
+    voter_addr = pl["ethereumAddress"]
     # setup
     try:
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)
@@ -140,8 +140,8 @@ def signup(pl):
         w3 = Web3(HTTPProvider(get_env('pEthHost')))
         membership_addr = lookup_group_contract("main")
         unsigned_transactions = [
-            mk_raw_membership_tx(w3, to_addr, my_addr, membership_addr),
-            {'from': my_addr, 'to': to_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
+            mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr),
+            {'from': my_addr, 'to': voter_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
             ]
         log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
     except Exception as e:
