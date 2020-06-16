@@ -130,18 +130,18 @@ Resources:
         - Name: apg-voting-alpha0.2.3
           Type: deploy
           Output: ApgVAAddr
-        - Name: apg-va-init
+        - Name: apg-va-init0.2.3
           Type: calltx
           Function: $apg-voting-alpha0.2.3.initVotingAlpha
-        - Name: apg-va-self-op
+        - Name: apg-va-self-op0.2.3
           Type: calltx
           Function: $apg-voting-alpha0.2.3.initAddOperator
           Inputs: [ '^self' ]
-        - Name: apg-va-self-mbr
+        - Name: apg-va-self-mbr0.2.3
           Type: calltx
           Function: $apg-voting-alpha0.2.3.operatorAddMember
           Inputs: [ '^self' ]
-        - Name: apg-va-init-done
+        - Name: apg-va-init-done0.2.3
           Type: calltx
           Function: $apg-voting-alpha0.2.3.initComplete
 
