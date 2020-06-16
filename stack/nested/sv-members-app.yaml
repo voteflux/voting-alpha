@@ -73,11 +73,12 @@ Globals:
         pApiDomainRaw: !Ref pApiDomainRaw
   Api:
     EndpointConfiguration: REGIONAL
-    Cors:
-      AllowMethods: "'GET,POST,OPTIONS'"
-      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
-      AllowOrigin: "'*'"
-      # AllowOrigin: !Sub "'*.${pApiDomainRaw}'"
+# Apparently: Cors works only with inline Swagger specified in 'DefinitionBody' property.
+#    Cors:
+#      AllowMethods: "'GET,POST,OPTIONS'"
+#      AllowHeaders: "'Content-Type,X-Amz-Date,Authorization,X-Api-Key,X-Amz-Security-Token,X-Amz-User-Agent'"
+#      AllowOrigin: "'*'"
+#      # AllowOrigin: !Sub "'*.${pApiDomainRaw}'"
 
 
 Resources:

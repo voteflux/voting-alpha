@@ -173,7 +173,7 @@ Parameters:
 #      - c5.9xlarge
 #      - c5.18xlarge
   pAmiId:
-    Type:  'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Type: 'AWS::EC2::Image::Id'
     Default: '/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2'
   pDeployMacros:
     Type: String
@@ -320,7 +320,7 @@ Resources:
     Properties:
       HostedZoneName: !Sub ${HostedZoneDomain}.
       Name: !Sub static.${Subdomain}.${HostedZoneDomain}.
-      TTL: '60'
+      TTL: 60
       Type: TXT
       ResourceRecords:
         - !Sub '"${rStaticBucket.DomainName}"'

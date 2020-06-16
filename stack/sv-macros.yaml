@@ -41,14 +41,14 @@ Resources:
       CodeUri: './cr/params'
       Runtime: python3.7
       Handler: 'macro-eips.macro'
-      FunctionName: !Sub sv-macro-eips
+      FunctionName: sv-macro-eips
       Timeout: 30
       Layers: [ !If [ cDeployLayer, !Ref rLambdaLayer, !Ref pLambdaLayer ] ]
 
   rMacroExeLogRole:
     Type: AWS::IAM::Role
     Properties:
-      RoleName: !Sub sv-macro-lambda-exe-role
+      RoleName: sv-macro-lambda-exe-role
       AssumeRolePolicyDocument:
         Version: '2012-10-17'
         Statement:
@@ -58,7 +58,7 @@ Resources:
             Action: ['sts:AssumeRole']
       Path: /macro-role/
       Policies:
-        - PolicyName: !Sub sv-macro-lambda-exe-policy
+        - PolicyName: sv-macro-lambda-exe-policy
           PolicyDocument:
             Version: '2012-10-17'
             Statement:

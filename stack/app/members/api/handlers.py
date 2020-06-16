@@ -74,16 +74,18 @@ async def handle_quickchain_upgrade(event, ctx):
         msg = event['body']
         log.info(f"Got msg >>: {json.dumps(msg)}")
         params = msg["params"]
+        method = msg["method"]
 
         return (({
             "signup": signup,
             "ballot_publish": ballot_publish
-        }).get(msg["method"]))(params)
+        })[method])(params)
     except Exception as e:
         e_str = str(e)
-        log.error(e_str)
+        log.error(f"handle_quickchain_upgrade errored: {type(e)}: {e_str}")
         import traceback
-        log.error(traceback.extract_tb(e.__traceback__))
+        log.error(traceback.print_exc(e.__traceback__))
+        raise LambdaError(500)
 
 
 def create_ballot(spec_hash):
@@ -129,7 +131,7 @@ def create_ballot(spec_hash):
 
 
 def signup(pl):
-    to_addr = pl["signup"]
+    to_addr = pl["voterAddr"]
     # setup
     try:
         priv_key = get_ssm_param(f"sv-{get_env('pNamePrefix')}-nodekey-service-publish", with_decryption=True)

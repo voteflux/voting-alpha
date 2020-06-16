@@ -40,7 +40,7 @@ Resources:
       ServiceToken: !GetAtt rChaincodeLambda.Arn
       pNamePrefix: !Ref pNamePrefix
       pPublicNodeDomain: !Ref pPublicNodeDomain
-      pS3Location: !Sub rStaticBucketCleanupLambda
+      pS3Location: !Ref pArtifactsBucket
       pSmartContracts:
         - Name: membership
           Type: deploy
