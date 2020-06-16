@@ -8,5 +8,9 @@ solc bytecode (in the chaincode/bytecode directory) included in the following fi
 * sv-comm-auction.bin
 * bblib-v7.bin
 * bbfarm.bin
+* bbfarm-aux-2.bin
+* token-abbr-lookup.bin
 
 see https://github.com/secure-vote/sv-light-smart-contracts for more.
+
+the following bytecode is compiled from VotingAlpha by @apguerrera, particularly this release: <https://github.com/XertroV/voting-alpha-mini-sc/releases/tag/v0.2.2-maxsBookBurningCrusade>
