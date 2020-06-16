@@ -1,6 +1,7 @@
 import json
 import os
 from base64 import b64encode
+from datetime import datetime
 from enum import Enum
 from typing import NamedTuple, Union
 
@@ -42,6 +43,8 @@ class HexJsonEncoder(json.JSONEncoder):
             return obj.hex()
         if isinstance(obj, AttrDict) or isinstance(obj, AttributeDict):
             return dict(**obj)
+        if isinstance(obj, datetime):
+            return obj.isoformat()
         return super().default(obj)
 
 

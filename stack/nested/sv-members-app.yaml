@@ -54,6 +54,9 @@ Parameters:
 
   pApgVotingAlphaAddr:
     Type: String
+
+  pNetworkId:
+    Type: String
     
 
 Conditions:
@@ -127,6 +130,7 @@ Resources:
           SesConfigurationSetName: !Ref pSesConfigurationSetName
           pHashSalt: !Ref pHashSalt
           pApgVotingAlphaAddr: !Ref pApgVotingAlphaAddr
+          pNetworkId: !Ref pNetworkId
       Handler: api.handlers.handle_quickchain_upgrade
       Runtime: python3.7
       Layers:
@@ -154,6 +158,7 @@ Resources:
               - ssm:GetParameter
             Resource:
             - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-nodekey-service-*
+            - Fn::Sub: arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/sv-${pNamePrefix}-param-networkid
           - Effect: Allow
             Action:
               - dynamodb:BatchGetItem

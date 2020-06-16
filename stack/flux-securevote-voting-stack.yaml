@@ -757,6 +757,7 @@ Resources:
         pVoterGroupToAddressMapJson: !Ref pVoterGroupToAddressMapJson
         pMemberEmailDeliveryNotificationEmail: !Ref pMemberEmailDeliveryNotificationEmail
         pApgVotingAlphaAddr: !GetAtt rChaincodeStack.Outputs.oApgVotingAlphaAddr
+        pNetworkId: !GetAtt rParamsCr.NetworkId
         pHashSalt: !Ref pHashSalt
         pEnv: !Ref EnvironmentName
 #        pSesConfigurationSetName: !Ref rMemberEmailConfigurationSet

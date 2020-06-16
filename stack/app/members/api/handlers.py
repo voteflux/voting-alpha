@@ -18,7 +18,7 @@ from pymonad.Maybe import Nothing
 from pynamodb.attributes import BooleanAttribute, MapAttribute
 from utils import can_base64_decode
 from web3 import Web3, HTTPProvider
-from .common.lib import _hash
+from .common.lib import _hash, gen_ssm_networkid
 from .common.env import get_env
 from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
@@ -140,7 +140,9 @@ def create_ballot(spec_hash):
 
 
 def signup(pl):
-    voter_addr = pl["ethereumAddress"]
+    # allow sending not-checksummed addrs if params.unsafeChecksum is True
+    voter_addr = (Web3.toChecksumAddress if pl.get("unsafeChecksum", False) else lambda x: x)(pl["ethereumAddress"])
+
     # setup
     try:
         w3 = Web3(HTTPProvider(get_env('pEthHost')))
@@ -148,9 +150,14 @@ def signup(pl):
         account = w3.eth.account.from_key(priv_key)  # Account.privateKeyToAccount(priv_key)
         my_addr = account.address
         membership_addr = get_env("pApgVotingAlphaAddr")
+        chain_id = get_ssm_param(gen_ssm_networkid(get_env('pNamePrefix')), with_decryption=True)
+        log.info(f"chain_id from ssm: {chain_id}")
+        chain_id = int(get_env("pNetworkId"))
+        log.info(f"chain_id from env: {chain_id}")
         unsigned_transactions = [
             mk_raw_membership_tx(w3, voter_addr, my_addr, membership_addr),
-            {'from': my_addr, 'to': voter_addr, 'value': w3.toWei(1, 'ether'), 'gas': 100000, 'gasPrice': 1},
+            {'from': my_addr, 'to': voter_addr, 'value': w3.toWei(1, 'ether'), 'gas': 8000000, 'gasPrice': 1,
+             'chainId': chain_id},
         ]
         log.info(f'unsigned transactions: {json.dumps(unsigned_transactions, indent=2)}')
     except Exception as e:
@@ -169,8 +176,9 @@ def signup(pl):
             log.info(f'confirmed: {txid}')
             txr = w3.eth.getTransactionReceipt(txid)
             out_txs[txid] = txr
-            if txr['status'] != 0:
-                log.error(f"transaction status != 0: {json_to_str_safe(dict(unsigned_tx=unsigned_tx, txid=txid, txr=txr))}")
+            if txr['status'] == 0:  # tx.status == 0 => error
+                log.error(
+                    f"transaction status == 0 (Error!): {json_to_str_safe(dict(unsigned_tx=unsigned_tx, txid=txid, txr=txr))}")
                 raise OnboardingException()
 
         log.info(f'first txid in out_txs: {out_txs[txids[0]]}')
@@ -360,7 +368,9 @@ It is important you retain the password shown to you on your voting device.
 
 def get_ssm_param(name, decode_json=False, with_decryption=False):
     try:
-        value = ssm.get_parameter(Name=name, WithDecryption=with_decryption)['Parameter']['Value']
+        r = ssm.get_parameter(Name=name, WithDecryption=with_decryption)
+        log.info(f"got ssm param: {json_to_str_safe(r)}")
+        value = r['Parameter']['Value']
     except Exception as e:
         log.warning(f"Error during get_parameter(Name='{name}'): {repr(e)}")
         return None
@@ -500,7 +510,7 @@ async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_clai
             out_txs[txid] = txr
             # txrs = list([w3.eth.getTransactionReceipt(txid) for txid in txids])
             # if any([txr['status'] == 0 for txr in txrs]):
-            if txr['status'] == 0:
+            if txr['status'] == 0:  # tx.status == 0 => error
                 raise OnboardingException()
 
         log.info(f'first txid in out_txs: {out_txs[txids[0]]}')
