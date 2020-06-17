@@ -21,6 +21,8 @@ https://flux.vote
 * [Recommended]: Install [pyenv](https://github.com/pyenv/pyenv) and [pyenv-virtualenv](https://github.com/pyenv/pyenv-virtualenv)
 * [Recommended]: Docker
 
+The recommended things are for tests, etc, used automatically via `./manage`
+
 ### local repo
 
 * `./setup/pyenv.sh` -- ensures python and venv are set up
