@@ -61,6 +61,10 @@ To deploy two stacks along side eachother the following vars must be unique:
 
 You can edit `.env.dev`, etc to keep them neat
 
+#### Update nested stacks directly (useful during dev)
+
+* example `./manage deploy-ns ./stack/nested/sv-members-app.yaml flux-dev-chain-rMembersApp-1EPU6A6JKYGSX`
+
 ### Tests
 
 * `./manage test chaincode`

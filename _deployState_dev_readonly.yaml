@@ -1,0 +1,18 @@
+outputs:
+  oApgVotingAlphaAddr: '0xca733a39b72DA72078DBc1c642e6C3836C5b424E'
+  oApiUrl: https://api.blockchain.suzuka.flux.party/
+  oBBFarmAddr: '0x26A6f21358D39E4E3Cf34ef2Ac6b83186418e3b3'
+  oBBFarmAux2Addr: '0x66e6aC2e8FA898003Fc1A0a2b5557f6526C2D76E'
+  oCertificateArn: arn:aws:acm:ap-southeast-2:005605650896:certificate/cfdf9079-550c-444b-a692-9cce046ac9ee
+  oChainSpecUrl: https://s3.ap-southeast-2.amazonaws.com/flux-app-dev-static-resources/chain/chainspec.json
+  oDemocHash: '0xb7a3bf2ddb4ae293770fd1e7e9697b165559c1986953d0352303ba4459b0cbd4'
+  oEc2KeyPairName: sv-flux-app-dev-node-ec2-ssh-key
+  oErc20BalProxyAddr: '0x809a90612C28BBc8f9A33F6484e731874C7941b3'
+  oEthNetworkId: '2351283430'
+  oIndexAddr: '0x813552517e36b4D8c5e8c7CA8c184Af5c314ecf2'
+  oMbrsAddr: '0xEFb85950a21910F62D00ab80197Fd2798760a74b'
+  oPublicNode0Ip: 3.24.234.52
+  oPublicNode1Ip: 54.153.142.251
+  oStaticDomain: static.blockchain.suzuka.flux.party
+  oTokenAbbrLookupAddr: '0x8ee026Bbbae598145B2206Df74050811BF2e6a76'
+  oWeb3Provider: << UNKNOWN OUTPUT >>

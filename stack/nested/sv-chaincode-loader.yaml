@@ -127,23 +127,23 @@ Resources:
           Type: calltx
           Inputs: [ $democ-hash ]
           Value: 1200000000000000000000
-        - Name: apg-voting-alpha023
+        - Name: apg-voting-alpha-024
           Type: deploy
           Output: ApgVAAddr
-        - Name: apg-va-init023
+        - Name: apg-va-init-024
           Type: calltx
-          Function: $apg-voting-alpha023.initVotingAlpha
-        - Name: apg-va-self-op023
+          Function: $apg-voting-alpha-024.initVotingAlpha
+        - Name: apg-va-self-op-024
           Type: calltx
-          Function: $apg-voting-alpha023.initAddOperator
+          Function: $apg-voting-alpha-024.initAddOperator
           Inputs: [ '^self' ]
-        - Name: apg-va-self-mbr023
+        - Name: apg-va-self-mbr-024
           Type: calltx
-          Function: $apg-voting-alpha023.operatorAddMember
+          Function: $apg-voting-alpha-024.operatorAddMember
           Inputs: [ '^self' ]
-#        - Name: apg-va-init-done023
+#        - Name: apg-va-init-done-024
 #          Type: calltx
-#          Function: $apg-voting-alpha023.initComplete
+#          Function: $apg-voting-alpha-024.initComplete
 
 
   rChaincodeLambda:
