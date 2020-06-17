@@ -137,6 +137,21 @@ def pause():
 
 
 #
+# STATE OF DEPLOYMENTS
+#
+
+
+def state_readonly_write(env_name, full_state):
+    with open(f"_deployState_{env_name}_readonly.yaml", 'w') as f:
+        yaml.dump(full_state, f)
+
+
+def state_readonly_read(env_name):
+    with open(f"_deployState_{env_name}_readonly.yaml", 'r') as f:
+        return AttrDict(yaml.load(f))
+
+
+#
 # CFN STACKS
 #
 
@@ -706,12 +721,18 @@ If the tests fail to connect to a node try: './manage tools start-node'""")
     sak = session_token['Credentials']['SecretAccessKey']
     st = session_token['Credentials']['SessionToken']
 
+    try:
+        deployed_state = state_readonly_read("dev")
+        # 0x7B8068D32AA298158E838Fcd9a324B9810AE8333 is from 16/06/20
+    except Exception as e:
+        deployed_state = AttrDict(dict(outputs={"oApgVotingAlphaAddr": "0x7B8068D32AA298158E838Fcd9a324B9810AE8333"}))
+
     extra_args = \
         f' -e AWS_DEFAULT_REGION=ap-southeast-2 -e AWS_ACCESS_KEY_ID={aki} ' \
         f' -e AWS_SECRET_ACCESS_KEY={sak} -e AWS_SESSION_TOKEN={st} ' \
         f' -e pNamePrefix={os.environ.get("NAME_PREFIX")} ' \
         f' -e pEthHost=http://voting-alpha-node:8545/ ' \
-        f' -e pApgVotingAlphaAddr=0x7B8068D32AA298158E838Fcd9a324B9810AE8333 ' \
+        f' -e pApgVotingAlphaAddr={deployed_state.outputs.oApgVotingAlphaAddr} ' \
         f' --user root --network voting-alpha '
 
     test_cmd = 'bash -c "export ORIG_DIR=$PWD && ' \
@@ -1125,10 +1146,8 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
 
     await_in_prog(stack_name, heading_prefix="AWAITING [UNEXPECTED]", fullscreen=fullscreen)
     stack_del_if_necessary(stack_name)
-    if stack_exists(stack_name):
-        sid = update_stack(stack_name, obj_url, params_aws)
-    else:
-        sid = create_stack(stack_name, obj_url, params_aws)
+    stack_op = update_stack if stack_exists(stack_name) else create_stack
+    sid = stack_op(stack_name, obj_url, params_aws)
     cfn_evt_url = gen_cfn_evt_url(sid)
     if watch:
         stream_cfn_events(stack_name, heading_prefix="DEPLOY", fullscreen=fullscreen)
@@ -1142,7 +1161,8 @@ def sync_env(ctx, env_name, nested_stack, watch, set_params, update_params, pkg_
         else:
             print_output("Deploy Success! {}".format(cfn_evt_url))
             deets = get_stack_details(stack_name)
-            outputs = AttrDefault(lambda: '<< UNKNOWN OUTPUT >>', cfn_outputs_to_dict(deets['Outputs']))
+            outputs_dict = cfn_outputs_to_dict(deets['Outputs'])
+            outputs = AttrDefault(lambda: '<< UNKNOWN OUTPUT >>', outputs_dict)
             print_output(f"Outputs: {json.dumps(dict(outputs.items()), indent=2)}")
             print_output(f"""Env Vars for UI:
 
@@ -1154,6 +1174,7 @@ VUE_APP_API_ENDPOINT={outputs.oApiUrl}
 VUE_APP_TOKEN_LOOKUP={outputs.oTokenAbbrLookupAddr}
 
 """)
+            state_readonly_write(env_name, dict(outputs=outputs_dict))
             try:
                 os.system(f'notify-send "CFN Stack: {stack_name}"' 'Completed Deployment')
             except:

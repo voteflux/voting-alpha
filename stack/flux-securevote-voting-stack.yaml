@@ -852,6 +852,9 @@ Outputs:
   oErc20BalProxyAddr:
     Condition: cCreateChaincodeStack
     Value: !GetAtt rChaincodeStack.Outputs.oErc20BalProxyAddr
+  oApgVotingAlphaAddr:
+    Condition: cCreateChaincodeStack
+    Value: !GetAtt rChaincodeStack.Outputs.oApgVotingAlphaAddr
 
   oApiUrl:
     Value: !Sub "https://${rApiBootstrapStack.Outputs.oApiDomain}/"

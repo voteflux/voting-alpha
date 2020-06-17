@@ -72,6 +72,18 @@ def sign_and_send(w3, account, unsigned_tx):
     return txid
 
 
+def get_ix_address(*args, **kwargs):
+    _addr = get_env('pApgVotingAlphaAddr')
+    if type(_addr) is not str or len(_addr) != 42:
+        return {"result": "failed", "message": f"bad config in handler, got: {_addr}"}
+    return {"result": "success", "address": _addr}
+
+
+#
+# METHODS FOR APG-VOTING-ALPHA SC
+#
+
+
 @post_common
 async def handle_quickchain_upgrade(event, ctx):
     def ballot_publish(pl):
@@ -81,13 +93,24 @@ async def handle_quickchain_upgrade(event, ctx):
     try:
         msg = event['body']
         log.info(f"Got msg >>: {json.dumps(msg)}")
+        if "method" not in msg or "params" not in msg:
+            raise LambdaError(421, "bad call, post an obj with 'method' and 'params' props.")
         params = msg["params"]
         method = msg["method"]
 
-        return (({
+        available_methods = {
             "signup": signup,
-            "ballot_publish": ballot_publish
-        })[method])(params)
+            "ballot_publish": ballot_publish,
+            "index_address": get_ix_address,
+        }
+
+        if method not in available_methods:
+            return {"result": "failure",
+                    "message": f"method '{method}' not one of the available methods: "
+                               f"{','.join(available_methods.keys())}"}
+
+        return (available_methods[method])(params)
+
     except Exception as e:
         e_str = str(e)
         log.error(f"handle_quickchain_upgrade errored: {type(e)}: {e_str}")

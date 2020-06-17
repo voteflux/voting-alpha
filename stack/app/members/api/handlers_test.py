@@ -4,7 +4,7 @@ from datetime import datetime
 
 from web3 import Web3
 from web3.providers.eth_tester import EthereumTesterProvider
-from .handlers import handle_quickchain_upgrade, mk_raw_membership_tx, create_ballot
+from .handlers import handle_quickchain_upgrade, mk_raw_membership_tx, create_ballot, get_ix_address
 
 log = logging.getLogger(__name__)
 
@@ -28,3 +28,7 @@ def test_create_ballot():
     spec_hash = '0x' + '0'*(64 - len(bspec_part1)) + bspec_part1
     log.info(f"test_create_ballot: spec_hash: {spec_hash}")
     create_ballot(spec_hash)
+
+
+def test_ix_addr():
+    get_ix_address()
