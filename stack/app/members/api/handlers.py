@@ -24,7 +24,7 @@ from .send_mail import send_email, format_backup
 from .db import new_session, gen_otp_hash, gen_otp_and_otp_hash, gen_session_anon_id, hash_up
 from .models import SessionModel, OtpState, SessionState, TimestampMap, VoterEnrolmentModel
 from .handler_utils import post_common, Message, RequestTypes, verify, ensure_session, \
-    verifyDictKeys, encode_and_sign_msg, json_to_str_safe
+    verify_dict_keys, encode_and_sign_msg, json_to_str_safe
 from .lib import mk_logger, now, bs_to_base64
 from .env import get_env
 
@@ -60,7 +60,7 @@ def load_sc(filename):
         return f.read()
 
 
-def sign_and_send(w3, account, unsigned_tx):
+def sign_and_send(w3, account, unsigned_tx, tx_must_succeed=True):
     my_addr = unsigned_tx['from']
     next_nonce = w3.eth.getTransactionCount(my_addr)
     # txs = list([dict(nonce=next_nonce + i, **prev_tx) for (i, prev_tx) in enumerate(unsigned_transactions)])
@@ -68,8 +68,12 @@ def sign_and_send(w3, account, unsigned_tx):
     # raw_txs = list([account.signTransaction(tx).rawTransaction for tx in txs])
     txid = w3.eth.sendRawTransaction(raw_tx)
     # txids = list([w3.eth.sendRawTransaction(tx) for tx in raw_txs])
-    w3.eth.waitForTransactionReceipt(txid, poll_latency=0.05)
-    return txid
+    txr = w3.eth.waitForTransactionReceipt(txid, poll_latency=0.05)
+    if tx_must_succeed and txr['status'] == 0:  # tx.status == 0 => error
+        log.error(
+            f"transaction status == 0 (Error!): {json_to_str_safe(dict(unsigned_tx=unsigned_tx, txid=txid, txr=txr))}")
+        raise LambdaError(421, {"status": "failed", "error": "tx_failed", "message": json_to_str_safe(txr)})
+    return txr
 
 
 def get_ix_address(*args, **kwargs):
@@ -147,8 +151,8 @@ def create_ballot(spec_hash):
     tx = base_tx()
     tx.update(ix.functions.createNewBill(spec_hash).buildTransaction(tx))
     log.info(f"createNewBill tx: {json.dumps(tx)}")
-    txid = sign_and_send(w3, account, tx)
-    return {"result": "success", "billCreationTxid": "0x" + txid.hex()}
+    txr = sign_and_send(w3, account, tx)
+    return {"result": "success", "billCreationTxid": f"0x{txr['transactionHash'].hex()}"}
 
     # ballots = [{
     #     "ballotVersion": 1,
@@ -195,7 +199,8 @@ def signup(pl):
         out_txs = {}
         txids = []
         for unsigned_tx in unsigned_transactions:
-            txid = sign_and_send(w3, account, unsigned_tx)
+            txr = sign_and_send(w3, account, unsigned_tx)
+            txid = txr['transactionHash'].hex()
             txids.append(txid)
             log.info(f'confirmed: {txid}')
             txr = w3.eth.getTransactionReceipt(txid)
@@ -210,7 +215,7 @@ def signup(pl):
 
         log.info(f"main start: {start}")
         log.info(f"main end: {datetime.datetime.now().isoformat()}")
-        return {'result': 'success', 'txids': ','.join(txid.hex() for txid in txids)}
+        return {'result': 'success', 'txids': ','.join(txid for txid in txids)}
     except Exception as e:
         # this would be bad, need to have the above as atomic as possible.
         log.error(e)
@@ -241,7 +246,7 @@ async def establish_session(event, ctx, msg, eth_address, jwt_claim, session, *a
     verify(time.time() >= starting_timestamp, 'early rego attempt', 'Cannot register voters before 8am Monday 25th.')
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
 
-    verify(verifyDictKeys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
+    verify(verify_dict_keys(msg.payload, ['email_addr', 'address']), 'establish_session: verify session payload')
     verify(eth_address == msg.payload.address,
            f'verify ethereum addresses match: calc:{eth_address} provided:{msg.payload.address}')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
@@ -314,7 +319,7 @@ Example payload:
 
 async def provide_otp(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
-    verify(verifyDictKeys(msg.payload, ['email_addr', 'otp']), 'payload keys')
+    verify(verify_dict_keys(msg.payload, ['email_addr', 'otp']), 'payload keys')
     verify(session.state == SessionState.s010_SENT_OTP_EMAIL, 'session state is as expected')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
 
@@ -359,7 +364,7 @@ Example payload:
 
 async def send_backup_email(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
     verify(time.time() <= ending_timestamp, 'late rego attempt', f'Cannot register voters after {ending_time_human}.')
-    verify(verifyDictKeys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
+    verify(verify_dict_keys(msg.payload, ['email_addr', 'encrypted_backup']), 'payload keys')
     verify(session.state == SessionState.s020_CONFIRMED_OTP, 'expected state')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
     verify(len(msg.payload.encrypted_backup) < 2000, 'expected size of backup')
@@ -480,7 +485,7 @@ class OnboardingException(Exception):
 
 
 async def confirm_and_finalize_onboarding(event, ctx, msg, eth_address, jwt_claim, session, *args, **kwargs):
-    verify(verifyDictKeys(msg.payload, ['email_addr']), 'payload keys')
+    verify(verify_dict_keys(msg.payload, ['email_addr']), 'payload keys')
     verify(msg.payload.email_addr.lower() == msg.payload.email_addr, 'email must be lowercase')
     verify(session.state == SessionState.s030_SENT_BACKUP_EMAIL, 'expected state')
 

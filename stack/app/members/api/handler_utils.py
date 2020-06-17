@@ -61,7 +61,7 @@ def verify(condition, failure_msg=None, user_msg: str = None):
         raise LambdaError(400, pub_er, {"error": (user_msg + f"\nError Key: {error_key}") if user_msg else pub_er})
 
 
-def verifyDictKeys(d, keys):
+def verify_dict_keys(d, keys):
     for key in keys:
         if key not in d:
             return False
