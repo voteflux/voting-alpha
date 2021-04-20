@@ -59,7 +59,7 @@ pluggy==0.13.1
 poyo==0.5.0
 prompt-toolkit==1.0.14
 protobuf==3.12.2
-py==1.8.2
+py==1.10.0
 pyasn1==0.4.8
 pycryptodome==3.9.7
 Pygments==2.6.1
