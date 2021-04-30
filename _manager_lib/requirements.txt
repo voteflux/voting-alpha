@@ -77,7 +77,7 @@ PyYAML==5.3.1
 regex==2020.6.8
 requests==2.23.0
 rlp==1.2.0
-rsa==4.6
+rsa==4.7
 s3transfer==0.3.3
 serverlessrepo==0.1.10
 six==1.15.0
