@@ -86,7 +86,7 @@ tomlkit==0.5.8
 toolz==0.10.0
 typing-extensions==3.7.4.2
 tzlocal==2.1
-urllib3==1.25.9
+urllib3==1.26.5
 varint==1.0.2
 wcwidth==0.2.4
 web3==5.11.0
