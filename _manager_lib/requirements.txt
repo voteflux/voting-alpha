@@ -18,7 +18,7 @@ chardet==3.0.4
 chevron==0.13.1
 click==7.1.2
 colorama==0.4.3
-cookiecutter==1.7.2
+cookiecutter==2.1.1
 cytoolz==0.10.1
 dateparser==0.7.6
 decorator==4.4.2
