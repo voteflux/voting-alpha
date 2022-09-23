@@ -58,7 +58,7 @@ parsimonious==0.8.1
 pluggy==0.13.1
 poyo==0.5.0
 prompt-toolkit==1.0.14
-protobuf==3.12.2
+protobuf==3.18.3
 py==1.8.2
 pyasn1==0.4.8
 pycryptodome==3.9.7
